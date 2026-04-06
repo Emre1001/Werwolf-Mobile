@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Werwolf Legends – Synchroner Erzähler-Modus</title>
-  <meta name="description" content="Die ultimative Werwolf-PWA mit Echtzeit-Synchronisation, Erzähler-Interface und kinoreifen Animationen.">
+  <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation, Erzähler-Interface und kinoreifen Animationen.">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0a0f2a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="https://via.placeholder.com/192x192?text=WW">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle fill='%237c3aed' cx='50' cy='50' r='50'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white'%3E🐺%3C/text%3E%3C/svg%3E">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -18,7 +18,7 @@
   <div id="app" class="glass-app">
     <div class="bg-animation"></div>
     <div class="ui-container" id="ui-container">
-      <!-- Dynamische Inhalte werden hier von app.js gerendert -->
+      <div class="loader" style="margin-top: 20vh;"></div>
     </div>
   </div>
   <script type="module" src="app.js"></script>
