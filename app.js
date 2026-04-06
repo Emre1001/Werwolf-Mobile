@@ -1,8 +1,9 @@
-// app.js – Werwolf PWA mit Firebase Firestore
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+// app.js – Werwolf PWA mit echter Firebase (werwolf-mobile)
+// Mit sofortigem Rendering und Firestore-Regel-Hinweis
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ========== FIREBASE KONFIGURATION (HIER DEINE EIGENEN DATEN EINFÜGEN) ==========
+// ========== DEINE ECHTE FIREBASE KONFIGURATION ==========
 const firebaseConfig = {
   apiKey: "AIzaSyBy9KD3rh8-JmmNwaPi03FJnrvaUq5UZGM",
   authDomain: "werwolf-mobile.firebaseapp.com",
@@ -13,11 +14,32 @@ const firebaseConfig = {
   measurementId: "G-2ZXMHGBRPH"
 };
 
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+// Firebase initialisieren
+let db;
+let firebaseReady = false;
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  firebaseReady = true;
+  console.log("✅ Firebase verbunden");
+} catch (e) {
+  console.error("Firebase Initialisierungsfehler:", e);
+  firebaseReady = false;
+}
 
 // ========== GLOBALE ZUSTÄNDE ==========
-let currentUser = { id: localStorage.getItem("ww_player_id") || crypto.randomUUID(), name: "" };
+// Fallback für crypto.randomUUID (falls nicht verfügbar)
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+const storedId = localStorage.getItem("ww_player_id");
+let currentUser = { 
+  id: storedId && storedId !== "undefined" ? storedId : generateUUID(), 
+  name: "" 
+};
 localStorage.setItem("ww_player_id", currentUser.id);
 let currentLobbyId = null;
 let isNarrator = false;
@@ -25,23 +47,23 @@ let unsubscribeLobby = null;
 
 const ui = document.getElementById("ui-container");
 
-// Hilfsfunktionen
 function render(html) {
+  if (!ui) return;
   ui.innerHTML = html;
   ui.classList.add("fade-transition");
   setTimeout(() => ui.classList.remove("fade-transition"), 500);
 }
 
-function showLobbyMenu() { window.location.reload(); }
-
-// Lobby-Code (6 Zeichen)
-function generateCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+function showLobbyMenu() {
+  if (unsubscribeLobby) unsubscribeLobby();
+  currentLobbyId = null;
+  renderMainMenu();
 }
 
-// ========== LOBBY ERSTELLEN ==========
+// ========== LOBBY FUNKTIONEN (nur wenn Firebase bereit) ==========
 async function createLobby(playerName) {
-  const code = generateCode();
+  if (!firebaseReady) throw new Error("Firebase nicht verfügbar");
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
   const lobbyRef = doc(db, "lobbies", code);
   const player = { id: currentUser.id, name: playerName, isAlive: true, role: null, hasUsedAction: false };
   await setDoc(lobbyRef, {
@@ -53,11 +75,10 @@ async function createLobby(playerName) {
   currentLobbyId = code;
   isNarrator = true;
   attachListener(code);
-  renderLobbyView();
 }
 
-// ========== LOBBY BEITRETEN ==========
 async function joinLobby(code, playerName) {
+  if (!firebaseReady) throw new Error("Firebase nicht verfügbar");
   const q = query(collection(db, "lobbies"), where("code", "==", code));
   const snap = await getDocs(q);
   if (snap.empty) throw new Error("Lobby nicht gefunden");
@@ -71,98 +92,72 @@ async function joinLobby(code, playerName) {
   attachListener(code);
 }
 
-// ========== LIVE-LISTENER ==========
 function attachListener(lobbyId) {
+  if (!firebaseReady) return;
   if (unsubscribeLobby) unsubscribeLobby();
   const lobbyRef = doc(db, "lobbies", lobbyId);
   unsubscribeLobby = onSnapshot(lobbyRef, (snap) => {
-    if (!snap.exists()) { render(`<div class="glass-card"><h2>Lobby gelöscht</h2><button class="glass-button" id="backHome">Zurück</button></div>`);
+    if (!snap.exists()) {
+      render(`<div class="glass-card"><h2>Lobby gelöscht</h2><button class="glass-button" id="backHome">Zurück</button></div>`);
       document.getElementById("backHome")?.addEventListener("click", showLobbyMenu);
       return;
     }
     const data = { id: snap.id, ...snap.data() };
     renderByState(data);
+  }, (error) => {
+    console.error("Firestore Fehler:", error);
+    render(`<div class="glass-card"><h2>Fehler bei Echtzeit-Updates</h2><p>${error.message}</p><button class="glass-button" id="retry">Neu laden</button></div>`);
+    document.getElementById("retry")?.addEventListener("click", () => location.reload());
   });
 }
 
-// ========== ROUTING ==========
 function renderByState(lobby) {
   const players = lobby.players || [];
   const currentPlayer = players.find(p => p.id === currentUser.id);
-  if (!currentPlayer && !isNarrator) { showLobbyMenu(); return; }
   const isHost = (lobby.hostId === currentUser.id);
-  isNarrator = isHost;
-  if (!lobby.gameStarted) return renderLobbyView(lobby);
-  if (isHost) renderNarrator(lobby);
-  else renderPlayer(lobby, currentPlayer);
-}
-
-// ========== LOBBY-ANSICHT (WARTEZONE) ==========
-function renderLobbyView(lobby = null) {
-  if (!lobby) {
-    render(`
-      <div class="glass-card" style="max-width: 500px; margin:0 auto;">
-        <h1><i class="fas fa-moon"></i> WERWOLF LEGENDS</h1>
-        <p>Synchroner Erzähler-Modus • Echtzeit-PWA</p>
-        <input type="text" id="playerName" placeholder="Dein Name" value="Spieler${Math.floor(Math.random()*100)}">
-        <div style="display:flex; gap:1rem; margin-top:1rem;">
-          <button class="glass-button" id="createLobbyBtn"><i class="fas fa-crown"></i> Lobby erstellen</button>
-          <button class="glass-button" id="joinLobbyBtn"><i class="fas fa-code"></i> Beitreten</button>
-        </div>
-        <div id="lobbyList"></div>
-      </div>
-    `);
-    document.getElementById("createLobbyBtn")?.addEventListener("click", async () => {
-      let name = document.getElementById("playerName").value.trim();
-      if (!name) name = "Erzähler";
-      currentUser.name = name;
-      await createLobby(name);
-    });
-    document.getElementById("joinLobbyBtn")?.addEventListener("click", () => {
-      const code = prompt("6-stelliger Lobby-Code:");
-      const name = document.getElementById("playerName").value.trim() || "Gast";
-      if (code) joinLobby(code, name).catch(e => alert(e.message));
-    });
-    // Verfügbare Lobbys anzeigen
-    (async () => {
-      const q = query(collection(db, "lobbies"), where("gameStarted", "==", false));
-      const snap = await getDocs(q);
-      const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
-      const listDiv = document.getElementById("lobbyList");
-      if (listDiv && lobbies.length) {
-        listDiv.innerHTML = `<h3>Öffentliche Lobbys</h3><div class="player-list">${lobbies.map(l => `<div class="player-tag">${l.code} (${l.players.length} Spieler) <button class="glass-button small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
-        document.querySelectorAll("[data-code]").forEach(btn => btn.addEventListener("click", (e) => joinLobby(btn.dataset.code, document.getElementById("playerName")?.value.trim() || "Spieler")));
-      }
-    })();
+  if (!lobby.gameStarted) {
+    renderLobbyView(lobby);
     return;
   }
-  // Bestehende Lobby anzeigen
+  if (isHost) {
+    renderNarrator(lobby);
+  } else if (currentPlayer) {
+    renderPlayer(lobby, currentPlayer);
+  } else {
+    render(`<div class="glass-card"><p>Du bist nicht in dieser Lobby.</p><button class="glass-button" onclick="location.reload()">Neu laden</button></div>`);
+  }
+}
+
+function renderLobbyView(lobby = null) {
+  if (!lobby) return;
   const playersList = lobby.players.map(p => `<div class="player-tag">${p.name} ${p.id === lobby.hostId ? '👑 Erzähler' : ''}</div>`).join('');
+  const isHost = (lobby.hostId === currentUser.id);
+  isNarrator = isHost;
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code}</h2>
       <div class="player-list">${playersList}</div>
-      ${isNarrator ? `<button class="glass-button" id="startGameBtn"><i class="fas fa-play"></i> Spiel starten (Rollen verteilen)</button>` : `<p>⏳ Warte auf den Erzähler...</p>`}
+      ${isHost ? `<button class="glass-button" id="startGameBtn"><i class="fas fa-play"></i> Spiel starten (Rollen verteilen)</button>` : `<p>⏳ Warte auf den Erzähler...</p>`}
       <button class="glass-button" id="leaveLobby">Verlassen</button>
     </div>
   `);
-  if (isNarrator) document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.code, lobby.players));
-  document.getElementById("leaveLobby")?.addEventListener("click", () => { if (unsubscribeLobby) unsubscribeLobby(); currentLobbyId = null; showLobbyMenu(); });
+  if (isHost) document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.code, lobby.players));
+  document.getElementById("leaveLobby")?.addEventListener("click", () => {
+    if (unsubscribeLobby) unsubscribeLobby();
+    currentLobbyId = null;
+    renderMainMenu();
+  });
 }
 
-// ========== SPIEL STARTEN (ROLLENVERTEILUNG) ==========
 async function startGame(lobbyCode, playersArr) {
   const roles = ["Dorfbewohner", "Werwolf", "Werwolf", "Seherin", "Hexe", "Amor", "Jäger", "Kleines Mädchen"];
-  const shuffledPlayers = [...playersArr].sort(() => Math.random() - 0.5);
-  const assigned = shuffledPlayers.map((p, idx) => ({ ...p, role: roles[idx % roles.length], isAlive: true }));
-  // Amor verliebt zwei Spieler
+  const shuffled = [...playersArr].sort(() => Math.random() - 0.5);
+  const assigned = shuffled.map((p, idx) => ({ ...p, role: roles[idx % roles.length], isAlive: true }));
   let lovers = [];
   const amor = assigned.find(p => p.role === "Amor");
   if (amor) {
     const alive = assigned.filter(p => p.id !== amor.id);
-    if (alive.length >= 2) {
-      lovers = [alive[0].id, alive[1].id];
-    }
+    if (alive.length >= 2) lovers = [alive[0].id, alive[1].id];
   }
   const nightOrder = ["WEREWOLF", "SMALL_GIRL", "SEER", "WITCH"];
   await updateDoc(doc(db, "lobbies", lobbyCode), {
@@ -172,9 +167,8 @@ async function startGame(lobbyCode, playersArr) {
   });
 }
 
-// ========== ERZÄHLER-DASHBOARD (MIT SKRIPT & WEITER) ==========
 function renderNarrator(lobby) {
-  const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData } = lobby;
+  const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, id } = lobby;
   let script = "", canNext = false;
   if (phase === "NIGHT") {
     const step = nightActionsOrder[currentNightIndex];
@@ -189,34 +183,34 @@ function renderNarrator(lobby) {
   } else if (phase === "VOTING") {
     script = "🗳️ Abstimmung! Jeder wählt einen Verdächtigen. Mehrheit entscheidet.";
     canNext = true;
-  } else if (phase === "GAME_END") script = "🏆 Spiel beendet!";
-
+  }
   const nextHandler = async () => {
     if (phase === "NIGHT") await advanceNightPhase(lobby);
-    else if (phase === "DAY") await updateDoc(doc(db, "lobbies", lobby.id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
+    else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
     else if (phase === "VOTING") await resolveVoting(lobby);
   };
-
   render(`
     <div class="glass-card">
-      <h2><i class="fas fa-torah"></i> Erzähler-Konsole — ${lobby.id}</h2>
+      <h2><i class="fas fa-torah"></i> Erzähler-Konsole — ${lobby.code}</h2>
       <div class="narrator-script"><i class="fas fa-microphone-alt"></i> <strong>Skript:</strong><br/>${script}</div>
       <div><strong>Lebende Spieler:</strong> ${players.filter(p => p.isAlive).map(p => p.name).join(', ')}</div>
-      ${canNext ? `<button class="glass-button" id="narratorNext"><i class="fas fa-step-forward"></i> Weiter ➡️</button>` : ''}
+      ${canNext ? `<button class="glass-button" id="narratorNext"><i class="fas fa-step-forward"></i> Weiter</button>` : ''}
       <button class="glass-button" id="endGame">Spiel beenden</button>
     </div>
   `);
   if (canNext) document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
-  document.getElementById("endGame")?.addEventListener("click", async () => { if (confirm("Spiel zurücksetzen?")) await deleteDoc(doc(db, "lobbies", lobby.id)); showLobbyMenu(); });
+  document.getElementById("endGame")?.addEventListener("click", async () => {
+    if (confirm("Spiel zurücksetzen?")) {
+      await deleteDoc(doc(db, "lobbies", lobby.id));
+      showLobbyMenu();
+    }
+  });
 }
 
-// Nachtphasen-Automatik
 async function advanceNightPhase(lobby) {
-  const { id, nightActionsOrder, currentNightIndex, actionData } = lobby;
+  const { id, nightActionsOrder, currentNightIndex } = lobby;
   const step = nightActionsOrder[currentNightIndex];
   if (step === "WEREWOLF") await resolveWerewolfKill(lobby);
-  else if (step === "SMALL_GIRL") await resolveSmallGirl(lobby);
-  else if (step === "SEER") await resolveSeer(lobby);
   else if (step === "WITCH") await resolveWitch(lobby);
   const nextIdx = currentNightIndex + 1;
   if (nextIdx >= nightActionsOrder.length) {
@@ -226,7 +220,6 @@ async function advanceNightPhase(lobby) {
     await updateDoc(doc(db, "lobbies", id), { currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx] });
   }
 }
-
 async function resolveWerewolfKill(lobby) {
   const votes = lobby.actionData?.werewolfVotes || {};
   const counts = {};
@@ -235,8 +228,6 @@ async function resolveWerewolfKill(lobby) {
   for (let [id, c] of Object.entries(counts)) if (c > max) { max = c; maxId = id; }
   await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.nightVictim": maxId });
 }
-async function resolveSmallGirl(lobby) { /* wird durch Spieler-Aktion gesetzt – hier nichts tun */ }
-async function resolveSeer(lobby) { /* wurde bereits vom Spieler ausgeführt */ }
 async function resolveWitch(lobby) {
   const witch = lobby.actionData.witch;
   let victim = lobby.actionData.nightVictim;
@@ -260,7 +251,6 @@ async function resolveNightDeath(lobby) {
   }
   await updateDoc(doc(db, "lobbies", lobby.id), { players });
 }
-
 async function resolveVoting(lobby) {
   const votes = lobby.votes || {};
   const counts = {};
@@ -276,7 +266,6 @@ async function resolveVoting(lobby) {
     const target = players.find(p => p.name === revenge);
     if (target) players = players.map(p => p.id === target.id ? { ...p, isAlive: false } : p);
   }
-  // Liebestod
   const lovers = lobby.actionData?.lovers || [];
   if (lovers.includes(maxId)) {
     const other = lovers.find(l => l !== maxId);
@@ -285,10 +274,9 @@ async function resolveVoting(lobby) {
   await updateDoc(doc(db, "lobbies", lobby.id), { players, phase: "NIGHT", currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}, "actionData.werewolfVotes": {} });
 }
 
-// ========== SPIELER-ANSICHT (DYNAMISCHE AKTIONEN) ==========
 function renderPlayer(lobby, player) {
   if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Du bist tot</h2><p>Du kannst das Spiel nun beobachten.</p></div>`);
-  const { phase, narratorStep, actionData, players } = lobby;
+  const { phase, narratorStep, players } = lobby;
   if (phase === "NIGHT") {
     const role = player.role;
     if (narratorStep === "WEREWOLF" && role === "Werwolf") {
@@ -324,12 +312,12 @@ function renderPlayer(lobby, player) {
           const updated = players.map(p => p.id === player.id ? { ...p, isAlive: false } : p);
           await updateDoc(doc(db, "lobbies", lobby.id), { players: updated, "actionData.smallGirlPeeked": true });
         } else {
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true, "actionData.peekResult": result });
+          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true });
         }
       });
       document.getElementById("peekNo")?.addEventListener("click", async () => {
         await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true });
-        render(`<div class="glass-card"><p>Du schweigst und bleibst sicher.</p></div>`);
+        render(`<div class="glass-card"><p>Du bleibst im Versteck.</p></div>`);
       });
       return;
     }
@@ -398,7 +386,76 @@ function renderPlayer(lobby, player) {
   render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Der Erzähler leitet die Diskussion.</p></div>`);
 }
 
-// Service Worker registrieren (PWA)
+// ========== HAUPTSMENÜ ==========
+function renderMainMenu() {
+  if (!firebaseReady) {
+    render(`
+      <div class="glass-card" style="max-width: 500px; margin:0 auto;">
+        <h1><i class="fas fa-exclamation-triangle"></i> Firebase nicht erreichbar</h1>
+        <p>Die Firebase-Konfiguration scheint korrekt, aber die Verbindung schlug fehl. Bitte prüfe die Firestore-Regeln in der Firebase Console.</p>
+        <p><strong>Lösung:</strong> Gehe zu Firestore Database → Regeln und setze:</p>
+        <pre style="background:#000; padding:1rem; border-radius:1rem;">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}</pre>
+        <button class="glass-button" id="reloadBtn">Seite neu laden</button>
+      </div>
+    `);
+    document.getElementById("reloadBtn")?.addEventListener("click", () => location.reload());
+    return;
+  }
+  render(`
+    <div class="glass-card" style="max-width: 500px; margin:0 auto;">
+      <h1><i class="fas fa-moon"></i> WERWOLF LEGENDS</h1>
+      <p>Synchroner Erzähler-Modus • Echtzeit-PWA</p>
+      <input type="text" id="playerName" placeholder="Dein Name" value="Spieler${Math.floor(Math.random()*100)}">
+      <div style="display:flex; gap:1rem; margin-top:1rem;">
+        <button class="glass-button" id="createLobbyBtn"><i class="fas fa-crown"></i> Lobby erstellen</button>
+        <button class="glass-button" id="joinLobbyBtn"><i class="fas fa-code"></i> Beitreten</button>
+      </div>
+      <div id="lobbyList"></div>
+    </div>
+  `);
+  document.getElementById("createLobbyBtn")?.addEventListener("click", async () => {
+    let name = document.getElementById("playerName").value.trim();
+    if (!name) name = "Erzähler";
+    currentUser.name = name;
+    try {
+      await createLobby(name);
+    } catch(e) {
+      alert("Fehler beim Erstellen: " + e.message);
+    }
+  });
+  document.getElementById("joinLobbyBtn")?.addEventListener("click", () => {
+    const code = prompt("6-stelliger Lobby-Code:");
+    const name = document.getElementById("playerName").value.trim() || "Gast";
+    if (code) joinLobby(code, name).catch(e => alert(e.message));
+  });
+  // Verfügbare Lobbys anzeigen
+  (async () => {
+    try {
+      const q = query(collection(db, "lobbies"), where("gameStarted", "==", false));
+      const snap = await getDocs(q);
+      const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
+      const listDiv = document.getElementById("lobbyList");
+      if (listDiv && lobbies.length) {
+        listDiv.innerHTML = `<h3>Öffentliche Lobbys</h3><div class="player-list">${lobbies.map(l => `<div class="player-tag">${l.code} (${l.players.length} Spieler) <button class="glass-button" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
+        document.querySelectorAll("[data-code]").forEach(btn => btn.addEventListener("click", (e) => joinLobby(btn.dataset.code, document.getElementById("playerName")?.value.trim() || "Spieler")));
+      }
+    } catch(e) {
+      console.warn("Fehler beim Laden der Lobbys:", e);
+    }
+  })();
+}
+
+// ========== START ==========
+renderMainMenu();
+
+// Service Worker registrieren
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(e => console.log("Service Worker nicht verfügbar", e)));
 }
