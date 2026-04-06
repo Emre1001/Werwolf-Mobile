@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Werwolf Legends – Synchroner Erzähler-Modus</title>
+  <title>Werwolf Mobile – Synchroner Erzähler-Modus</title>
   <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation, Erzähler-Interface und kinoreifen Animationen.">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0a0f2a">
@@ -20,6 +20,12 @@
     <div class="ui-container" id="ui-container">
       <div class="loader" style="margin-top: 20vh;"></div>
     </div>
+  </div>
+  <!-- Installations-Prompt (wird dynamisch eingeblendet) -->
+  <div id="installPrompt" style="display:none; position:fixed; bottom:20px; left:20px; right:20px; z-index:1000;" class="glass-card">
+    <p style="margin-bottom:10px;"><i class="fas fa-download"></i> App installieren für最佳体验</p>
+    <button id="installBtn" class="glass-button">Installieren</button>
+    <button id="closeInstallBtn" class="glass-button" style="background:rgba(0,0,0,0.5);">Später</button>
   </div>
   <script type="module" src="app.js"></script>
 </body>

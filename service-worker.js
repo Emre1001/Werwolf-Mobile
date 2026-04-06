@@ -1,4 +1,4 @@
-const CACHE_NAME = "werewolf-pwa-v1";
+const CACHE_NAME = "werwolf-pwa-v2";
 const urls = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json"];
 
 self.addEventListener("install", event => {
@@ -6,7 +6,9 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("fetch", event => {
-  event.respondWith(caches.match(event.request).then(res => res || fetch(event.request)));
+  event.respondWith(
+    caches.match(event.request).then(response => response || fetch(event.request))
+  );
 });
 
 self.addEventListener("activate", event => {

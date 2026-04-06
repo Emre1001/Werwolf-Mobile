@@ -1,4 +1,4 @@
-/* style.css – Werwolf PWA | Glassmorphism + Cinematic UI */
+/* style.css – Werwolf PWA | Glassmorphism + verbesserte UI */
 * {
   margin: 0;
   padding: 0;
@@ -12,7 +12,6 @@ body {
   transition: background 0.3s ease;
 }
 
-/* Light Mode */
 @media (prefers-color-scheme: light) {
   body {
     background: radial-gradient(circle at 20% 30%, #eef2ff, #d9e0f0);
@@ -42,7 +41,6 @@ body {
   padding: 1.5rem;
 }
 
-/* Animierter Nebel-Hintergrund */
 .bg-animation {
   position: fixed;
   top: 0;
@@ -69,7 +67,6 @@ body {
   transition: all 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
 }
 
-/* Glassmorphism Cards */
 .glass-card {
   background: rgba(15, 25, 55, 0.45);
   backdrop-filter: blur(14px);
@@ -110,7 +107,12 @@ h1, h2, h3 {
   box-shadow: 0 12px 28px -8px rgba(0,0,0,0.5);
 }
 
-input, select {
+.glass-button-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+input, select, textarea {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(139, 92, 246, 0.5);
   border-radius: 2rem;
@@ -127,6 +129,10 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.3);
 }
 
+input::placeholder {
+  color: rgba(255,255,255,0.5);
+}
+
 .player-list {
   display: flex;
   flex-wrap: wrap;
@@ -141,6 +147,9 @@ input:focus {
   padding: 0.5rem 1.2rem;
   border-left: 3px solid #a855f7;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .role-badge {
@@ -207,7 +216,103 @@ input:focus {
 
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
+/* Icon-Buttons */
+.icon-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2rem;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: 0.2s;
+  border: 1px solid rgba(139,92,246,0.3);
+}
+.icon-button:hover {
+  background: rgba(139,92,246,0.2);
+  transform: translateY(-5px);
+}
+.icon-button i {
+  font-size: 2.5rem;
+  color: #c084fc;
+}
+.icon-button span {
+  font-weight: 600;
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ef4444;
+  transition: 0.4s;
+  border-radius: 34px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: #22c55e;
+}
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+.public-badge {
+  display: inline-block;
+  padding: 0.2rem 0.8rem;
+  border-radius: 2rem;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+.public-badge.public { background: #22c55e; color: white; }
+.public-badge.private { background: #ef4444; color: white; }
+
+/* Modal */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  max-width: 400px;
+  width: 90%;
+}
+
+/* Responsive */
 @media (max-width: 760px) {
   .glass-card { padding: 1.2rem; }
   .glass-button { padding: 0.6rem 1.2rem; }
+  .icon-button i { font-size: 1.8rem; }
 }
