@@ -1,8 +1,8 @@
-// app.js – Werwolf Mobile | Ultimative PWA mit allen Features
+// app.js – Werwolf Mobile | Inaktivitäts-Kick, verbesserte UI, Erzähler-Votes, Wiedereintritt
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ========== FIREBASE KONFIGURATION (DEIN PROJEKT) ==========
+// ========== FIREBASE KONFIGURATION ==========
 const firebaseConfig = {
   apiKey: "AIzaSyBy9KD3rh8-JmmNwaPi03FJnrvaUq5UZGM",
   authDomain: "werwolf-mobile.firebaseapp.com",
@@ -19,42 +19,76 @@ console.log("✅ Firebase verbunden");
 
 // ========== GLOBALE ZUSTÄNDE ==========
 function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2); }
-let currentUser = { id: localStorage.getItem("ww_player_id") || uuid(), name: "" };
+// Geräte-ID für Wiedereintritt (localStorage)
+let deviceId = localStorage.getItem("ww_device_id");
+if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
+let currentUser = { id: localStorage.getItem("ww_player_id") || uuid(), name: "", deviceId: deviceId };
 localStorage.setItem("ww_player_id", currentUser.id);
 let currentLobbyId = null;
 let unsubscribeLobby = null;
-let deferredPrompt = null; // für PWA-Installation
+let heartbeatInterval = null;
+let deferredPrompt = null;
 
 const ui = document.getElementById("ui-container");
 
-// Hilfsfunktionen
 function render(html) { ui.innerHTML = html; ui.classList.add("fade-transition"); setTimeout(() => ui.classList.remove("fade-transition"), 500); }
 function showModal(contentHtml, onClose) {
   const modalDiv = document.createElement("div");
   modalDiv.className = "modal";
-  modalDiv.innerHTML = `<div class="modal-content glass-card">${contentHtml}<div style="text-align:center; margin-top:1rem;"><button class="glass-button" id="modalClose">Schließen</button></div></div>`;
+  modalDiv.innerHTML = `<div class="modal-content glass-card">${contentHtml}<div style="text-align:center; margin-top:1.5rem;"><button class="glass-button" id="modalClose">Schließen</button></div></div>`;
   document.body.appendChild(modalDiv);
-  modalDiv.querySelector("#modalClose")?.addEventListener("click", () => { modalDiv.remove(); if (onClose) onClose(); });
+  modalDiv.querySelector("#modalClose")?.addEventListener("click", () => { modalDiv.remove(); if(onClose) onClose(); });
   return modalDiv;
 }
 
-// ========== LOBBY ERSTELLEN (mit Public/Private + Settings) ==========
+// Heartbeat (alle 10 Sekunden) – nur wenn in Lobby
+function startHeartbeat(lobbyId) {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(async () => {
+    if (!currentLobbyId) return;
+    const lobbyRef = doc(db, "lobbies", currentLobbyId);
+    const lobbySnap = await getDoc(lobbyRef);
+    if (!lobbySnap.exists()) return;
+    const lobby = lobbySnap.data();
+    const playerIndex = lobby.players.findIndex(p => p.id === currentUser.id);
+    if (playerIndex !== -1) {
+      const updatedPlayers = [...lobby.players];
+      updatedPlayers[playerIndex] = { ...updatedPlayers[playerIndex], lastSeen: Date.now() };
+      await updateDoc(lobbyRef, { players: updatedPlayers });
+    }
+  }, 10000);
+}
+
+// Inaktivitäts-Check (alle 15 Sekunden) – läuft im Listener
+async function checkInactivePlayers(lobbyId, players) {
+  const now = Date.now();
+  const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
+  if (inactive.length === 0) return;
+  const newPlayers = players.filter(p => !inactive.some(i => i.id === p.id));
+  const lobbyRef = doc(db, "lobbies", lobbyId);
+  await updateDoc(lobbyRef, { players: newPlayers });
+  // Wenn keine Spieler mehr, Lobby löschen
+  if (newPlayers.length === 0) await deleteDoc(lobbyRef);
+}
+
+// ========== LOBBY ERSTELLEN ==========
 async function createLobby(playerName, isPublic, settings) {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
   const lobbyRef = doc(db, "lobbies", code);
-  const player = { id: currentUser.id, name: playerName, isAlive: true, role: null, hasUsedAction: false };
+  const player = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
   await setDoc(lobbyRef, {
     code, hostId: currentUser.id, gameStarted: false, phase: "LOBBY", narratorStep: null,
     players: [player], isPublic: isPublic, settings: settings,
     volunteerNarratorId: null, confirmedNarratorId: null,
-    actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers: [], nightVictim: null, hunterRevenge: null, publicVotes: {} }, // publicVotes für Erzähler
+    actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers: [], nightVictim: null, hunterRevenge: null, publicVotes: {} },
     votes: {}, nightActionsOrder: [], currentNightIndex: 0, lastUpdate: Date.now()
   });
   currentLobbyId = code;
+  startHeartbeat(code);
   attachListener(code);
 }
 
-// ========== LOBBY BEITRETEN ==========
+// ========== LOBBY BEITRETEN (mit Wiedereintritt) ==========
 async function joinLobby(code, playerName) {
   const q = query(collection(db, "lobbies"), where("code", "==", code));
   const snap = await getDocs(q);
@@ -62,36 +96,58 @@ async function joinLobby(code, playerName) {
   const lobbyDoc = snap.docs[0];
   const data = lobbyDoc.data();
   if (data.gameStarted) throw new Error("Spiel läuft bereits");
-  if (!data.isPublic && data.hostId !== currentUser.id) {
-    // Bei privater Lobby: Nur mit Code beitreten (Code ist ja bekannt) – erlaubt.
-    // Zusätzlich könnten wir Host-Bestätigung einbauen, aber reicht erstmal.
+  // Prüfen, ob Spieler mit dieser deviceId bereits existiert (Wiedereintritt)
+  const existingPlayer = data.players.find(p => p.deviceId === deviceId);
+  let newPlayers;
+  if (existingPlayer) {
+    // Spieler kehrt zurück – aktualisiere Namen und lastSeen
+    newPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
+    await updateDoc(lobbyDoc.ref, { players: newPlayers });
+    currentUser.id = existingPlayer.id;
+    localStorage.setItem("ww_player_id", currentUser.id);
+  } else {
+    const newPlayer = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
+    await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
   }
-  const newPlayer = { id: currentUser.id, name: playerName, isAlive: true, role: null, hasUsedAction: false };
-  await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
   currentLobbyId = code;
+  startHeartbeat(code);
   attachListener(code);
 }
 
-// ========== SPIELER VERLASSEN ==========
+// ========== KICKEN ==========
+async function kickPlayer(lobbyId, playerIdToKick) {
+  const lobbyRef = doc(db, "lobbies", lobbyId);
+  const lobbySnap = await getDoc(lobbyRef);
+  if (!lobbySnap.exists()) return;
+  const lobby = lobbySnap.data();
+  if (lobby.hostId !== currentUser.id) return;
+  const newPlayers = lobby.players.filter(p => p.id !== playerIdToKick);
+  await updateDoc(lobbyRef, { players: newPlayers });
+  if (playerIdToKick === currentUser.id) {
+    currentLobbyId = null;
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    showLobbyMenu();
+    alert("Du wurdest aus der Lobby gekickt.");
+  }
+}
+
+// ========== VERLASSEN ==========
 async function leaveLobby(lobbyId, playerId, hostId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   const lobbySnap = await getDoc(lobbyRef);
   if (!lobbySnap.exists()) return;
   const lobby = lobbySnap.data();
-  const newPlayers = lobby.players.filter(p => p.id !== playerId);
+  let newPlayers = lobby.players.filter(p => p.id !== playerId);
+  let newHostId = hostId;
+  if (hostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
   if (newPlayers.length === 0) {
     await deleteDoc(lobbyRef);
-    showLobbyMenu();
-    return;
+  } else {
+    await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
   }
-  let newHostId = hostId;
-  if (hostId === playerId) {
-    // Host verlässt: Erster Spieler wird neuer Host
-    newHostId = newPlayers[0].id;
-  }
-  await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
   if (playerId === currentUser.id) {
     currentLobbyId = null;
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
     showLobbyMenu();
   }
 }
@@ -100,13 +156,22 @@ async function leaveLobby(lobbyId, playerId, hostId) {
 function attachListener(lobbyId) {
   if (unsubscribeLobby) unsubscribeLobby();
   const lobbyRef = doc(db, "lobbies", lobbyId);
-  unsubscribeLobby = onSnapshot(lobbyRef, (snap) => {
+  unsubscribeLobby = onSnapshot(lobbyRef, async (snap) => {
     if (!snap.exists()) {
       render(`<div class="glass-card"><h2>Lobby wurde aufgelöst</h2><button class="glass-button" id="backHome">Startseite</button></div>`);
-      document.getElementById("backHome")?.addEventListener("click", showLobbyMenu);
+      document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; showLobbyMenu(); });
       return;
     }
     const data = { id: snap.id, ...snap.data() };
+    // Inaktivitäts-Check
+    await checkInactivePlayers(lobbyId, data.players);
+    // Wenn der aktuelle Spieler nicht mehr in players ist, wurde er gekickt
+    if (!data.players.find(p => p.id === currentUser.id)) {
+      currentLobbyId = null;
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      showLobbyMenu();
+      return;
+    }
     renderByState(data);
   });
 }
@@ -129,15 +194,14 @@ function renderByState(lobby) {
   }
 }
 
-// ========== LOBBY-ANSICHT (vor Spielstart) ==========
+// ========== LOBBY-ANSICHT ==========
 function renderLobbyView(lobby, isHost, currentPlayer) {
   const players = lobby.players;
-  const canStart = players.length >= 4;
+  const canStart = players.length >= 4 && lobby.confirmedNarratorId !== null;
   const volunteerId = lobby.volunteerNarratorId;
   const confirmedId = lobby.confirmedNarratorId;
   const alreadyVolunteered = (volunteerId === currentUser.id);
-  const isNarratorConfirmed = (confirmedId === currentUser.id);
-
+  
   let volunteerSection = '';
   if (!confirmedId) {
     if (!alreadyVolunteered) {
@@ -148,37 +212,50 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
   } else {
     volunteerSection = `<p>📢 Erzähler: ${players.find(p => p.id === confirmedId)?.name || 'unbekannt'}</p>`;
   }
-
+  
   let hostControls = '';
   if (isHost) {
     const volunteerPlayer = players.find(p => p.id === volunteerId);
     hostControls = `
-      <div style="margin: 1rem 0; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 1rem;">
-        <h3>Host-Einstellungen</h3>
+      <div style="margin: 1.2rem 0; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 1.2rem;">
+        <h3 style="margin-bottom:0.8rem;">Host-Einstellungen</h3>
         ${volunteerId ? `<p>Freiwilliger Erzähler: ${volunteerPlayer?.name} <button class="glass-button glass-button-small" id="confirmNarratorBtn">Als Erzähler bestätigen</button></p>` : '<p>Kein Freiwilliger bisher.</p>'}
-        <div id="roleToggles" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+        <div><strong>Rollen aktivieren/deaktivieren:</strong></div>
+        <div class="roles-grid" id="roleToggles">
           ${renderRoleToggles(lobby.settings || {})}
         </div>
-        <button class="glass-button" id="saveSettingsBtn">Einstellungen speichern</button>
+        <button class="glass-button" id="saveSettingsBtn" style="margin-top:0.8rem;">Einstellungen speichern</button>
       </div>
     `;
   }
-
+  
+  const playersHtml = players.map(p => `
+    <div class="player-tag">
+      ${p.name} ${p.id === lobby.hostId ? '👑 Host' : ''} ${p.id === confirmedId ? '🎙️ Erzähler' : ''}
+      ${isHost && p.id !== currentUser.id ? `<button class="glass-button glass-button-small kick-btn" data-player-id="${p.id}" style="margin-left: 0.5rem; background: #ef4444; padding: 0.2rem 0.6rem;">Kicken</button>` : ''}
+    </div>
+  `).join('');
+  
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span></h2>
-      <div class="player-list">
-        ${players.map(p => `<div class="player-tag">${p.name} ${p.id === lobby.hostId ? '👑 Host' : ''} ${p.id === confirmedId ? '🎙️ Erzähler' : ''}</div>`).join('')}
-      </div>
+      <div class="player-list">${playersHtml}</div>
       <div>${volunteerSection}</div>
       ${hostControls}
-      <div style="margin-top: 1rem;">
-        ${isHost ? `<button class="glass-button" id="startGameBtn" ${!canStart ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten (min. 4 Spieler)</button>` : ''}
+      <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+        ${isHost ? `<button class="glass-button" id="startGameBtn" ${!canStart ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten (min. 4 Spieler & Erzähler)</button>` : ''}
         <button class="glass-button" id="leaveLobbyBtn">Lobby verlassen</button>
       </div>
     </div>
   `);
-
+  
+  document.querySelectorAll(".kick-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const playerId = btn.dataset.playerId;
+      if (confirm("Spieler wirklich kicken?")) await kickPlayer(lobby.id, playerId);
+    });
+  });
   if (!confirmedId && !alreadyVolunteered) document.getElementById("volunteerBtn")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "lobbies", lobby.id), { volunteerNarratorId: currentUser.id });
   });
@@ -188,8 +265,15 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
   if (isHost) {
     document.getElementById("saveSettingsBtn")?.addEventListener("click", async () => {
       const newSettings = {};
-      document.querySelectorAll(".role-toggle").forEach(cb => { newSettings[cb.dataset.role] = cb.checked; });
+      document.querySelectorAll(".role-card").forEach(card => {
+        const role = card.dataset.role;
+        newSettings[role] = card.classList.contains("selected");
+      });
       await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings });
+    });
+    // Rollen-Toggles als Kacheln
+    document.querySelectorAll(".role-card").forEach(card => {
+      card.addEventListener("click", () => card.classList.toggle("selected"));
     });
   }
   document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.id, lobby.players, lobby.settings));
@@ -197,16 +281,16 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
 }
 
 function renderRoleToggles(settings) {
-  const allRoles = ["Dorfbewohner", "Werwolf", "Seherin", "Hexe", "Amor", "Jäger", "Kleines Mädchen"];
+  const allRoles = ["Dorfbewohner","Werwolf","Seherin","Hexe","Amor","Jäger","Kleines Mädchen"];
   return allRoles.map(role => `
-    <label style="display: flex; align-items: center; gap: 0.5rem;">
-      <input type="checkbox" class="role-toggle" data-role="${role}" ${settings[role] !== false ? 'checked' : ''}>
+    <div class="role-card ${settings[role] !== false ? 'selected' : ''}" data-role="${role}">
+      <i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i>
       ${role}
-    </label>
+    </div>
   `).join('');
 }
 
-// ========== SPIEL STARTEN (mit Settings) ==========
+// ========== SPIEL STARTEN ==========
 async function startGame(lobbyCode, playersArr, settings) {
   const enabledRoles = [];
   if (settings.Dorfbewohner !== false) enabledRoles.push("Dorfbewohner");
@@ -216,16 +300,11 @@ async function startGame(lobbyCode, playersArr, settings) {
   if (settings.Amor !== false) enabledRoles.push("Amor");
   if (settings.Jäger !== false) enabledRoles.push("Jäger");
   if (settings["Kleines Mädchen"] !== false) enabledRoles.push("Kleines Mädchen");
-
-  // Mindestens 2 Werwölfe? Sicherstellen
   let rolePool = [...enabledRoles];
-  if (rolePool.filter(r => r === "Werwolf").length < 2 && rolePool.includes("Werwolf")) {
-    rolePool.push("Werwolf");
-  }
+  if (rolePool.filter(r => r === "Werwolf").length < 2 && rolePool.includes("Werwolf")) rolePool.push("Werwolf");
   while (rolePool.length < playersArr.length) rolePool.push("Dorfbewohner");
   const shuffled = [...playersArr].sort(() => Math.random() - 0.5);
   const assigned = shuffled.map((p, idx) => ({ ...p, role: rolePool[idx % rolePool.length], isAlive: true }));
-  // Amor
   let lovers = [];
   const amor = assigned.find(p => p.role === "Amor");
   if (amor) {
@@ -240,7 +319,7 @@ async function startGame(lobbyCode, playersArr, settings) {
   });
 }
 
-// ========== ERZÄHLER-DASHBOARD (mit Live-Votes) ==========
+// ========== ERZÄHLER-DASHBOARD (mit detaillierten Votes) ==========
 function renderNarratorDashboard(lobby) {
   const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData, votes, id } = lobby;
   let script = "", canNext = false;
@@ -258,31 +337,32 @@ function renderNarratorDashboard(lobby) {
     script = "🗳️ Abstimmung! Jeder wählt einen Verdächtigen. Mehrheit entscheidet.";
     canNext = true;
   }
-
-  // Live-Votes anzeigen
+  
+  // Detaillierte Vote-Anzeige
   let liveVotesHtml = '';
   if (phase === "NIGHT" && narratorStep === "WEREWOLF") {
     const werewolfVotes = actionData.werewolfVotes || {};
-    liveVotesHtml = `<div style="margin-top:1rem; background:rgba(0,0,0,0.4); border-radius:1rem; padding:1rem;"><strong>🐺 Werwolf-Votes:</strong><br/>${Object.entries(werewolfVotes).map(([pid, targetId]) => {
+    const voteEntries = Object.entries(werewolfVotes);
+    liveVotesHtml = `<div class="vote-detail-list"><strong>🐺 Werwolf-Votes (detailliert):</strong>${voteEntries.length ? voteEntries.map(([pid, targetId]) => {
       const voter = players.find(p => p.id === pid)?.name || "?";
       const target = players.find(p => p.id === targetId)?.name || "?";
-      return `${voter} → ${target}`;
-    }).join('<br/>') || 'Noch keine Stimmen'}</div>`;
+      return `<div class="vote-detail-item"><span>${voter}</span><span>→ ${target}</span></div>`;
+    }).join('') : '<div>Noch keine Stimmen</div>'}</div>`;
   } else if (phase === "VOTING") {
     const voteEntries = Object.entries(votes || {});
-    liveVotesHtml = `<div style="margin-top:1rem; background:rgba(0,0,0,0.4); border-radius:1rem; padding:1rem;"><strong>🗳️ Aktuelle Abstimmung:</strong><br/>${voteEntries.map(([pid, targetId]) => {
+    liveVotesHtml = `<div class="vote-detail-list"><strong>🗳️ Abstimmungsdetails:</strong>${voteEntries.length ? voteEntries.map(([pid, targetId]) => {
       const voter = players.find(p => p.id === pid)?.name || "?";
       const target = players.find(p => p.id === targetId)?.name || "?";
-      return `${voter} → ${target}`;
-    }).join('<br/>') || 'Noch keine Stimmen'}</div>`;
+      return `<div class="vote-detail-item"><span>${voter}</span><span>→ ${target}</span></div>`;
+    }).join('') : '<div>Noch keine Stimmen</div>'}</div>`;
   }
-
+  
   const nextHandler = async () => {
     if (phase === "NIGHT") await advanceNightPhase(lobby);
     else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
     else if (phase === "VOTING") await resolveVoting(lobby);
   };
-
+  
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-torah"></i> Erzähler-Konsole — ${lobby.code}</h2>
@@ -299,7 +379,7 @@ function renderNarratorDashboard(lobby) {
   });
 }
 
-// Nachtphasen-Automatik (wie zuvor, aber mit publicVotes für Erzähler)
+// ========== NACHT- UND ABSTIMMUNGSLOGIK (wie gehabt, aber gekürzt) ==========
 async function advanceNightPhase(lobby) {
   const { id, nightActionsOrder, currentNightIndex } = lobby;
   const step = nightActionsOrder[currentNightIndex];
@@ -367,7 +447,7 @@ async function resolveVoting(lobby) {
   await updateDoc(doc(db, "lobbies", lobby.id), { players, phase: "NIGHT", currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}, "actionData.werewolfVotes": {} });
 }
 
-// ========== SPIELER-ANSICHT (unverändert, aber vorhanden) ==========
+// ========== SPIELER-ANSICHT (vereinfacht, aber funktional) ==========
 function renderPlayerGameView(lobby, player) {
   if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Du bist tot</h2><p>Beobachte das Spiel.</p></div>`);
   const { phase, narratorStep, actionData, players } = lobby;
@@ -387,7 +467,7 @@ function renderPlayerGameView(lobby, player) {
           const current = lobby.actionData?.werewolfVotes || {};
           current[player.id] = selected;
           await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.werewolfVotes": current });
-          render(`<div class="glass-card"><p>✅ Abgestimmt. Warte auf Erzähler.</p></div>`);
+          render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`);
         }
       });
       return;
@@ -480,13 +560,13 @@ function renderPlayerGameView(lobby, player) {
   render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Der Erzähler leitet die Runde.</p></div>`);
 }
 
-// ========== HAUPTSMENÜ (3 Icons, Namensfeld, Lobbyliste) ==========
+// ========== HAUPTSMENÜ ==========
 function renderMainMenu() {
   render(`
     <div class="glass-card" style="max-width: 600px; margin:0 auto;">
       <h1><i class="fas fa-moon"></i> WERWOLF MOBILE</h1>
-      <input type="text" id="playerName" placeholder="Name" value="">
-      <div style="display: flex; gap: 1rem; justify-content: space-around; margin: 2rem 0;">
+      <input type="text" id="playerName" placeholder="Dein Name" value="">
+      <div class="icon-grid">
         <div class="icon-button" id="createLobbyIcon">
           <i class="fas fa-plus-circle"></i>
           <span>Lobby erstellen</span>
@@ -537,21 +617,31 @@ function showCreateLobbyModal() {
   let settings = { Dorfbewohner: true, Werwolf: true, Seherin: true, Hexe: true, Amor: true, Jäger: true, "Kleines Mädchen": true };
   const modalContent = `
     <h3>Lobby erstellen</h3>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0;">
-      <span>Öffentlich</span>
+    <div class="switch-container">
+      <span class="switch-label"><i class="fas ${isPublic ? 'fa-globe' : 'fa-lock'}"></i> <span id="privacyText">Öffentlich</span></span>
       <label class="switch"><input type="checkbox" id="publicSwitch" checked><span class="slider"></span></label>
     </div>
-    <div id="roleSettings" style="display:flex; flex-wrap:wrap; gap:0.5rem;">
-      ${Object.keys(settings).map(role => `<label><input type="checkbox" class="role-setting" data-role="${role}" checked> ${role}</label>`).join('')}
+    <div><strong>Rollen auswählen:</strong></div>
+    <div class="roles-grid" id="roleSettingsModal">
+      ${Object.keys(settings).map(role => `<div class="role-card selected" data-role="${role}"><i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i> ${role}</div>`).join('')}
     </div>
-    <button class="glass-button" id="confirmCreateLobby">Erstellen</button>
+    <button class="glass-button" id="confirmCreateLobby" style="margin-top:1rem;">Erstellen</button>
   `;
   showModal(modalContent, null);
   const modalDiv = document.querySelector(".modal");
-  modalDiv.querySelector("#publicSwitch")?.addEventListener("change", (e) => { isPublic = e.target.checked; });
+  const privacySpan = modalDiv.querySelector("#privacyText");
+  const publicSwitch = modalDiv.querySelector("#publicSwitch");
+  publicSwitch.addEventListener("change", (e) => {
+    isPublic = e.target.checked;
+    privacySpan.innerHTML = isPublic ? '<i class="fas fa-globe"></i> Öffentlich' : '<i class="fas fa-lock"></i> Privat';
+  });
+  // Rollen-Klicks
+  modalDiv.querySelectorAll(".role-card").forEach(card => {
+    card.addEventListener("click", () => card.classList.toggle("selected"));
+  });
   modalDiv.querySelector("#confirmCreateLobby")?.addEventListener("click", async () => {
     const newSettings = {};
-    modalDiv.querySelectorAll(".role-setting").forEach(cb => { newSettings[cb.dataset.role] = cb.checked; });
+    modalDiv.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
     await createLobby(currentUser.name, isPublic, newSettings);
     modalDiv.remove();
   });
@@ -564,7 +654,7 @@ function showJoinLobbyModal() {
   const modalContent = `
     <h3>Lobby beitreten</h3>
     <input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase">
-    <button class="glass-button" id="confirmJoinLobby">Beitreten</button>
+    <button class="glass-button" id="confirmJoinLobby" style="margin-top:1rem;">Beitreten</button>
   `;
   showModal(modalContent, null);
   const modalDiv = document.querySelector(".modal");
@@ -574,9 +664,11 @@ function showJoinLobbyModal() {
     try {
       await joinLobby(code, currentUser.name);
       modalDiv.remove();
-    } catch (e) { alert(e.message); }
+    } catch(e) { alert(e.message); }
   });
 }
+
+function showLobbyMenu() { renderMainMenu(); }
 
 // ========== PWA-INSTALLATION ==========
 window.addEventListener("beforeinstallprompt", (e) => {
