@@ -1,0 +1,21 @@
+{
+  "name": "Werwolf Legends – Synchroner Erzähler",
+  "short_name": "Werewolf PWA",
+  "description": "Echtzeit-Werwolf mit Erzähler-Modus, Rollen und kinoreifen Animationen",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#7c3aed",
+  "background_color": "#0a0f2a",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192?text=WW",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512?text=WW",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
