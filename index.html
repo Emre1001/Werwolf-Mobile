@@ -3,29 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Werwolf Mobile – Synchroner Erzähler-Modus</title>
-  <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation, Erzähler-Interface und kinoreifen Animationen.">
+  <title>Werwolf Mobile</title>
+  <meta name="description" content="Ultimative Werwolf-PWA – Professionell, synchronisiert, fesselnd.">
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0a0f2a">
+  <meta name="theme-color" content="#1a1a2e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle fill='%237c3aed' cx='50' cy='50' r='50'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white'%3E🐺%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="wolf-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app" class="glass-app">
-    <div class="bg-animation"></div>
-    <div class="ui-container" id="ui-container">
-      <div class="loader" style="margin-top: 20vh;"></div>
+    <div class="bg-animation">
+      <div class="nebula" style="top: 10%; left: 10%;"></div>
+      <div class="nebula" style="top: 60%; left: 70%; animation-delay: -5s;"></div>
     </div>
-  </div>
-  <!-- Installations-Prompt (wird dynamisch eingeblendet) -->
-  <div id="installPrompt" style="display:none; position:fixed; bottom:20px; left:20px; right:20px; z-index:1000;" class="glass-card">
-    <p style="margin-bottom:10px;"><i class="fas fa-download"></i> App installieren für最佳体验</p>
-    <button id="installBtn" class="glass-button">Installieren</button>
-    <button id="closeInstallBtn" class="glass-button" style="background:rgba(0,0,0,0.5);">Später</button>
+    <div class="ui-container" id="ui-container">
+      <div style="text-align:center; padding-top: 20vh;">
+        <h1 class="brand-title">Werwolf Mobile</h1>
+        <div class="loader"></div>
+      </div>
+    </div>
   </div>
   <script type="module" src="app.js"></script>
 </body>
