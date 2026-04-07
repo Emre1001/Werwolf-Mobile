@@ -914,6 +914,11 @@ function renderMainMenu() {
         </div>
       </div>
       <div id="lobbyList"></div>
+      <div style="text-align: center; margin-top: 1.5rem;">
+        <a href="https://paypal.me/Emre100120" target="_blank" class="glass-button" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none;">
+          <i class="fab fa-paypal"></i> Spenden (PayPal)
+        </a>
+      </div>
     </div>
   `);
   const nameInput = document.getElementById("playerName");
