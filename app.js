@@ -1,8 +1,8 @@
-// app.js – Werwolf Mobile | DSGVO-konform, Inaktivitäts-Kick, verbesserte UI
+// app.js – Werwolf Mobile | Professionelle Version mit zwei Spielmodi
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ========== FIREBASE KONFIGURATION (DEIN PROJEKT) ==========
+// ========== FIREBASE KONFIGURATION ==========
 const firebaseConfig = {
   apiKey: "AIzaSyBy9KD3rh8-JmmNwaPi03FJnrvaUq5UZGM",
   authDomain: "werwolf-mobile.firebaseapp.com",
@@ -13,71 +13,74 @@ const firebaseConfig = {
   measurementId: "G-2ZXMHGBRPH"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-console.log("✅ Firebase verbunden");
+let db, firebaseReady = false;
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  firebaseReady = true;
+  console.log("✅ Firebase verbunden");
+} catch(e) { console.error("Firebase init error", e); }
 
-// ========== CONSENT MANAGEMENT (DSGVO) ==========
+// ========== CONSENT MANAGEMENT ==========
 const CONSENT_KEY = "werwolf_consent_given";
 let consentGiven = localStorage.getItem(CONSENT_KEY) === "true";
 
-function showConsentBanner() {
-  const banner = document.getElementById("consent-banner");
-  if (banner && !consentGiven) banner.style.display = "flex";
+function showConsentModal() {
+  document.getElementById("consent-modal").style.display = "flex";
 }
-
 function acceptConsent() {
   localStorage.setItem(CONSENT_KEY, "true");
   consentGiven = true;
-  document.getElementById("consent-banner").style.display = "none";
-  // Nach Zustimmung App initialisieren
+  document.getElementById("consent-modal").style.display = "none";
   initApp();
 }
-
 function rejectConsent() {
-  // Bei Ablehnung: keine lokalen Daten speichern, App kann nicht genutzt werden
-  alert("Ohne Ihre Zustimmung kann die App nicht funktionieren, da sie technisch notwendige Daten speichert. Bitte akzeptieren Sie die Datenschutzerklärung, um fortzufahren.");
-  // Banner bleibt sichtbar, keine weitere Aktion
+  alert("Ohne Zustimmung kann die App nicht genutzt werden.");
 }
 
-// ========== RECHTSTEXTE (Impressum & Datenschutz) ==========
+// ========== OFFLINE-ERKENNUNG ==========
+let isOnline = navigator.onLine;
+function showOfflineModal() {
+  document.getElementById("offline-modal").style.display = "flex";
+}
+function hideOfflineModal() {
+  document.getElementById("offline-modal").style.display = "none";
+}
+window.addEventListener("online", () => {
+  isOnline = true;
+  hideOfflineModal();
+  if (consentGiven && firebaseReady) initApp();
+});
+window.addEventListener("offline", () => {
+  isOnline = false;
+  showOfflineModal();
+});
+
+// ========== RECHTSTEXTE ==========
 function showImpressum() {
   const modal = document.getElementById("legal-modal");
-  const title = document.getElementById("legal-modal-title");
-  const body = document.getElementById("legal-modal-body");
-  title.innerText = "Impressum";
-  body.innerHTML = `
+  document.getElementById("legal-modal-title").innerText = "Impressum";
+  document.getElementById("legal-modal-body").innerHTML = `
     <p><strong>Angaben gemäß § 5 TMG:</strong></p>
-    <p>Emre Asik<br>
-    E-Mail: emre.asik201060@gmail.com</p>
-    <p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage unter der oben genannten E-Mail-Adresse.</p>
-    <p><strong>Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV:</strong><br>
-    Emre Asik (Kontakt wie oben)</p>
-    <p><strong>Haftungsausschluss:</strong> Trotz sorgfältiger inhaltlicher Kontrolle übernehmen wir keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich deren Betreiber verantwortlich.</p>
+    <p>Emre Asik<br>E-Mail: emre.asik201060@gmail.com</p>
+    <p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage.</p>
+    <p><strong>Verantwortlich für den Inhalt:</strong> Emre Asik</p>
   `;
   modal.style.display = "flex";
 }
-
 function showDatenschutz() {
   const modal = document.getElementById("legal-modal");
-  const title = document.getElementById("legal-modal-title");
-  const body = document.getElementById("legal-modal-body");
-  title.innerText = "Datenschutzerklärung";
-  body.innerHTML = `
-    <p><strong>1. Verantwortlicher</strong><br>
-    Emre Asik, E-Mail: emre.asik201060@gmail.com</p>
-    <p><strong>2. Erhobene Daten</strong><br>
-    Diese App speichert auf Ihrem Gerät (LocalStorage) eine zufällig generierte Spieler-ID und eine Geräte-ID. Diese sind technisch notwendig, um das Spiel zu ermöglichen und Ihnen den Wiedereinstieg in laufende Spiele zu erlauben. Es werden keine personenbezogenen Daten wie Name, Adresse oder Standort erhoben oder an Dritte weitergegeben.</p>
-    <p><strong>3. Rechtsgrundlage</strong><br>
-    Die Verarbeitung erfolgt auf Grundlage von Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung) sowie Ihrer Einwilligung nach Art. 6 Abs. 1 lit. a DSGVO. Sie können Ihre Einwilligung jederzeit widerrufen, indem Sie den LocalStorage Ihres Browsers leeren.</p>
-    <p><strong>4. Weitergabe von Daten</strong><br>
-    Eine Weitergabe an Dritte erfolgt nicht. Die Firebase-Datenbank speichert temporär die Lobby-Informationen (Spielernamen, Rollen, Abstimmungen). Diese werden nach Spielende automatisch gelöscht.</p>
-    <p><strong>5. Ihre Rechte</strong><br>
-    Sie haben das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung Ihrer Daten sowie das Recht auf Datenübertragbarkeit. Kontaktieren Sie uns hierfür über die oben genannte E-Mail.</p>
-    <p><strong>6. Beschwerderecht</strong><br>
-    Sie haben das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren.</p>
+  document.getElementById("legal-modal-title").innerText = "Datenschutzerklärung";
+  document.getElementById("legal-modal-body").innerHTML = `
+    <p><strong>1. Verantwortlicher</strong><br>Emre Asik, emre.asik201060@gmail.com</p>
+    <p><strong>2. Erhobene Daten</strong><br>Spieler-ID, Geräte-ID (LocalStorage). Technisch notwendig.</p>
+    <p><strong>3. Rechtsgrundlage</strong><br>Art. 6 Abs. 1 lit. a, b DSGVO. Einwilligung jederzeit widerrufbar.</p>
+    <p><strong>4. Weitergabe</strong><br>Keine Weitergabe an Dritte.</p>
   `;
   modal.style.display = "flex";
+}
+function closeLegalModal() {
+  document.getElementById("legal-modal").style.display = "none";
 }
 
 // ========== GLOBALE ZUSTÄNDE ==========
@@ -90,9 +93,9 @@ let currentLobbyId = null;
 let unsubscribeLobby = null;
 let heartbeatInterval = null;
 let deferredPrompt = null;
+let roleDisplayTimeout = null;
 
 const ui = document.getElementById("ui-container");
-
 function render(html) { ui.innerHTML = html; ui.classList.add("fade-transition"); setTimeout(() => ui.classList.remove("fade-transition"), 500); }
 function showModal(contentHtml, onClose) {
   const modalDiv = document.createElement("div");
@@ -103,7 +106,31 @@ function showModal(contentHtml, onClose) {
   return modalDiv;
 }
 
-// ========== INAKTIVITÄTS-KICK (ohne Seitenneuladen) ==========
+// Rollen-Anzeige nach Spielstart
+function showRoleFor10Seconds(role, description) {
+  const roleDisplay = document.getElementById("role-display");
+  document.getElementById("role-name").innerText = role;
+  document.getElementById("role-description").innerHTML = description;
+  const timerSpan = document.getElementById("role-timer");
+  roleDisplay.style.display = "flex";
+  let seconds = 10;
+  timerSpan.innerText = seconds;
+  if (roleDisplayTimeout) clearInterval(roleDisplayTimeout);
+  const interval = setInterval(() => {
+    seconds--;
+    timerSpan.innerText = seconds;
+    if (seconds <= 0) {
+      clearInterval(interval);
+      roleDisplay.style.display = "none";
+    }
+  }, 1000);
+  roleDisplayTimeout = setTimeout(() => {
+    clearInterval(interval);
+    roleDisplay.style.display = "none";
+  }, 10000);
+}
+
+// Heartbeat & Inaktivitäts-Kick (ohne Reload)
 async function checkInactivePlayers(lobbyId, players) {
   const now = Date.now();
   const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
@@ -113,58 +140,61 @@ async function checkInactivePlayers(lobbyId, players) {
   await updateDoc(lobbyRef, { players: newPlayers });
   if (newPlayers.length === 0) await deleteDoc(lobbyRef);
 }
-
-// Heartbeat alle 10 Sekunden
 function startHeartbeat(lobbyId) {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
   heartbeatInterval = setInterval(async () => {
-    if (!currentLobbyId) return;
+    if (!currentLobbyId || !firebaseReady) return;
     const lobbyRef = doc(db, "lobbies", currentLobbyId);
     const lobbySnap = await getDoc(lobbyRef);
     if (!lobbySnap.exists()) return;
     const lobby = lobbySnap.data();
-    const playerIndex = lobby.players.findIndex(p => p.id === currentUser.id);
-    if (playerIndex !== -1) {
-      const updatedPlayers = [...lobby.players];
-      updatedPlayers[playerIndex] = { ...updatedPlayers[playerIndex], lastSeen: Date.now() };
-      await updateDoc(lobbyRef, { players: updatedPlayers });
+    const idx = lobby.players.findIndex(p => p.id === currentUser.id);
+    if (idx !== -1) {
+      const updated = [...lobby.players];
+      updated[idx] = { ...updated[idx], lastSeen: Date.now() };
+      await updateDoc(lobbyRef, { players: updated });
     }
   }, 10000);
 }
 
 // ========== LOBBY FUNKTIONEN ==========
-async function createLobby(playerName, isPublic, settings) {
-  if (!consentGiven) return;
+async function createLobby(playerName, isPublic, mode, settings) {
+  if (!consentGiven || !firebaseReady || !isOnline) throw new Error("Keine Verbindung");
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
   const lobbyRef = doc(db, "lobbies", code);
   const player = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
+  // mode: "online" (öffentlich, automatischer Erzähler) oder "private" (mit menschlichem Erzähler)
+  const isOnlineMode = (mode === "online");
   await setDoc(lobbyRef, {
     code, hostId: currentUser.id, gameStarted: false, phase: "LOBBY", narratorStep: null,
-    players: [player], isPublic: isPublic, settings: settings,
-    volunteerNarratorId: null, confirmedNarratorId: null,
+    players: [player], isPublic: isPublic, mode: mode, settings: settings,
+    volunteerNarratorId: null, confirmedNarratorId: isOnlineMode ? "AUTOMATIC" : null,
     actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers: [], nightVictim: null, hunterRevenge: null, publicVotes: {} },
     votes: {}, nightActionsOrder: [], currentNightIndex: 0, lastUpdate: Date.now()
   });
   currentLobbyId = code;
   startHeartbeat(code);
   attachListener(code);
+  if (isOnlineMode) {
+    // Automatischer Start nach 3 Sekunden (genug Zeit für andere)
+    setTimeout(() => startGame(code, [player], settings), 3000);
+  }
 }
 
 async function joinLobby(code, playerName) {
-  if (!consentGiven) return;
+  if (!consentGiven || !firebaseReady || !isOnline) throw new Error("Keine Verbindung");
   const q = query(collection(db, "lobbies"), where("code", "==", code));
   const snap = await getDocs(q);
   if (snap.empty) throw new Error("Lobby nicht gefunden");
   const lobbyDoc = snap.docs[0];
   const data = lobbyDoc.data();
   if (data.gameStarted) throw new Error("Spiel läuft bereits");
-  const existingPlayer = data.players.find(p => p.deviceId === deviceId);
-  let newPlayers;
-  if (existingPlayer) {
-    newPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
-    await updateDoc(lobbyDoc.ref, { players: newPlayers });
-    currentUser.id = existingPlayer.id;
-    if (consentGiven) localStorage.setItem("ww_player_id", currentUser.id);
+  const existing = data.players.find(p => p.deviceId === deviceId);
+  if (existing) {
+    const updatedPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
+    await updateDoc(lobbyDoc.ref, { players: updatedPlayers });
+    currentUser.id = existing.id;
+    localStorage.setItem("ww_player_id", currentUser.id);
   } else {
     const newPlayer = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
     await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
@@ -186,7 +216,7 @@ async function kickPlayer(lobbyId, playerIdToKick) {
     currentLobbyId = null;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     showLobbyMenu();
-    alert("Du wurdest aus der Lobby gekickt.");
+    alert("Du wurdest gekickt.");
   }
 }
 
@@ -198,11 +228,8 @@ async function leaveLobby(lobbyId, playerId, hostId) {
   let newPlayers = lobby.players.filter(p => p.id !== playerId);
   let newHostId = hostId;
   if (hostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
-  if (newPlayers.length === 0) {
-    await deleteDoc(lobbyRef);
-  } else {
-    await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
-  }
+  if (newPlayers.length === 0) await deleteDoc(lobbyRef);
+  else await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
   if (playerId === currentUser.id) {
     currentLobbyId = null;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -210,13 +237,12 @@ async function leaveLobby(lobbyId, playerId, hostId) {
   }
 }
 
-// ========== LIVE-LISTENER ==========
 function attachListener(lobbyId) {
   if (unsubscribeLobby) unsubscribeLobby();
   const lobbyRef = doc(db, "lobbies", lobbyId);
   unsubscribeLobby = onSnapshot(lobbyRef, async (snap) => {
     if (!snap.exists()) {
-      render(`<div class="glass-card"><h2>Lobby wurde aufgelöst</h2><button class="glass-button" id="backHome">Startseite</button></div>`);
+      render(`<div class="glass-card"><h2>Lobby aufgelöst</h2><button class="glass-button" id="backHome">Startseite</button></div>`);
       document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; showLobbyMenu(); });
       return;
     }
@@ -236,100 +262,94 @@ function renderByState(lobby) {
   const players = lobby.players || [];
   const currentPlayer = players.find(p => p.id === currentUser.id);
   const isHost = (lobby.hostId === currentUser.id);
-  const isConfirmedNarrator = (lobby.confirmedNarratorId === currentUser.id);
+  const isConfirmedNarrator = (lobby.confirmedNarratorId === currentUser.id) || (lobby.mode === "online" && lobby.confirmedNarratorId === "AUTOMATIC");
   if (!lobby.gameStarted) {
     renderLobbyView(lobby, isHost, currentPlayer);
     return;
   }
-  if (isConfirmedNarrator) {
+  if (isConfirmedNarrator || lobby.mode === "online") {
     renderNarratorDashboard(lobby);
   } else if (currentPlayer) {
     renderPlayerGameView(lobby, currentPlayer);
   } else {
-    render(`<div class="glass-card"><p>Du bist nicht in dieser Lobby.</p><button class="glass-button" onclick="location.reload()">Neu laden</button></div>`);
+    render(`<div class="glass-card"><p>Nicht in Lobby.</p><button class="glass-button" onclick="location.reload()">Neu laden</button></div>`);
   }
 }
 
-// ========== LOBBY-ANSICHT ==========
+// LOBBY VIEW (mit korrektem Public/Private Switch)
 function renderLobbyView(lobby, isHost, currentPlayer) {
   const players = lobby.players;
-  const canStart = players.length >= 4 && lobby.confirmedNarratorId !== null;
+  const canStart = (lobby.mode === "online") ? (players.length >= 2) : (players.length >= 4 && lobby.confirmedNarratorId !== null);
   const volunteerId = lobby.volunteerNarratorId;
   const confirmedId = lobby.confirmedNarratorId;
   const alreadyVolunteered = (volunteerId === currentUser.id);
-  
   let volunteerSection = '';
-  if (!confirmedId) {
-    if (!alreadyVolunteered) {
-      volunteerSection = `<button class="glass-button glass-button-small" id="volunteerBtn">🐺 Als Erzähler melden</button>`;
+  if (lobby.mode !== "online") {
+    if (!confirmedId) {
+      if (!alreadyVolunteered) {
+        volunteerSection = `<button class="glass-button glass-button-small" id="volunteerBtn">🐺 Als Erzähler melden</button>`;
+      } else {
+        volunteerSection = `<p>✅ Du hast dich gemeldet. Warte auf Bestätigung.</p>`;
+      }
     } else {
-      volunteerSection = `<p>✅ Du hast dich als Erzähler gemeldet. Warte auf Bestätigung durch den Host.</p>`;
+      volunteerSection = `<p>📢 Erzähler: ${players.find(p => p.id === confirmedId)?.name || 'unbekannt'}</p>`;
     }
   } else {
-    volunteerSection = `<p>📢 Erzähler: ${players.find(p => p.id === confirmedId)?.name || 'unbekannt'}</p>`;
+    volunteerSection = `<p>🤖 Online-Modus: Automatischer Erzähler aktiv.</p>`;
   }
-  
   let hostControls = '';
-  if (isHost) {
+  if (isHost && lobby.mode !== "online") {
     const volunteerPlayer = players.find(p => p.id === volunteerId);
     hostControls = `
       <div style="margin: 1.2rem 0; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 1.2rem;">
         <h3 style="margin-bottom:0.8rem;">Host-Einstellungen</h3>
-        ${volunteerId ? `<p>Freiwilliger Erzähler: ${volunteerPlayer?.name} <button class="glass-button glass-button-small" id="confirmNarratorBtn">Als Erzähler bestätigen</button></p>` : '<p>Kein Freiwilliger bisher.</p>'}
-        <div><strong>Rollen aktivieren/deaktivieren:</strong></div>
-        <div class="roles-grid" id="roleToggles">
-          ${renderRoleToggles(lobby.settings || {})}
-        </div>
-        <button class="glass-button" id="saveSettingsBtn" style="margin-top:0.8rem;">Einstellungen speichern</button>
+        ${volunteerId ? `<p>Freiwilliger Erzähler: ${volunteerPlayer?.name} <button class="glass-button glass-button-small" id="confirmNarratorBtn">Bestätigen</button></p>` : '<p>Kein Freiwilliger.</p>'}
+        <div><strong>Rollen aktivieren:</strong></div>
+        <div class="roles-grid" id="roleToggles">${renderRoleToggles(lobby.settings || {})}</div>
+        <button class="glass-button" id="saveSettingsBtn" style="margin-top:0.8rem;">Speichern</button>
+      </div>
+    `;
+  } else if (isHost && lobby.mode === "online") {
+    hostControls = `
+      <div style="margin: 1.2rem 0; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 1.2rem;">
+        <h3>Online-Modus Einstellungen</h3>
+        <div class="roles-grid" id="roleToggles">${renderRoleToggles(lobby.settings || {})}</div>
+        <button class="glass-button" id="saveSettingsBtn">Speichern</button>
       </div>
     `;
   }
-  
   const playersHtml = players.map(p => `
     <div class="player-tag">
       ${p.name} ${p.id === lobby.hostId ? '👑 Host' : ''} ${p.id === confirmedId ? '🎙️ Erzähler' : ''}
-      ${isHost && p.id !== currentUser.id ? `<button class="glass-button glass-button-small kick-btn" data-player-id="${p.id}" style="margin-left: 0.5rem; background: #ef4444; padding: 0.2rem 0.6rem;">Kicken</button>` : ''}
+      ${isHost && p.id !== currentUser.id ? `<button class="glass-button glass-button-small kick-btn" data-player-id="${p.id}" style="margin-left:0.5rem; background:#ef4444; padding:0.2rem 0.6rem;">Kicken</button>` : ''}
     </div>
   `).join('');
-  
   render(`
     <div class="glass-card">
-      <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span></h2>
+      <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span> <span style="margin-left:0.5rem;">${lobby.mode === 'online' ? '🌐 Online-Modus' : '🏠 Privat-Modus'}</span></h2>
       <div class="player-list">${playersHtml}</div>
       <div>${volunteerSection}</div>
       ${hostControls}
-      <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        ${isHost ? `<button class="glass-button" id="startGameBtn" ${!canStart ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten (min. 4 Spieler & Erzähler)</button>` : ''}
-        <button class="glass-button" id="leaveLobbyBtn">Lobby verlassen</button>
+      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
+        ${isHost ? `<button class="glass-button" id="startGameBtn" ${!canStart ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten</button>` : ''}
+        <button class="glass-button" id="leaveLobbyBtn">Verlassen</button>
       </div>
     </div>
   `);
-  
-  document.querySelectorAll(".kick-btn").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const playerId = btn.dataset.playerId;
-      if (confirm("Spieler wirklich kicken?")) await kickPlayer(lobby.id, playerId);
-    });
-  });
-  if (!confirmedId && !alreadyVolunteered) document.getElementById("volunteerBtn")?.addEventListener("click", async () => {
+  document.querySelectorAll(".kick-btn").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); kickPlayer(lobby.id, btn.dataset.playerId); }));
+  if (lobby.mode !== "online" && !confirmedId && !alreadyVolunteered) document.getElementById("volunteerBtn")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "lobbies", lobby.id), { volunteerNarratorId: currentUser.id });
   });
-  if (isHost && volunteerId) document.getElementById("confirmNarratorBtn")?.addEventListener("click", async () => {
+  if (isHost && lobby.mode !== "online" && volunteerId) document.getElementById("confirmNarratorBtn")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "lobbies", lobby.id), { confirmedNarratorId: volunteerId });
   });
   if (isHost) {
     document.getElementById("saveSettingsBtn")?.addEventListener("click", async () => {
       const newSettings = {};
-      document.querySelectorAll(".role-card").forEach(card => {
-        const role = card.dataset.role;
-        newSettings[role] = card.classList.contains("selected");
-      });
+      document.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
       await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings });
     });
-    document.querySelectorAll(".role-card").forEach(card => {
-      card.addEventListener("click", () => card.classList.toggle("selected"));
-    });
+    document.querySelectorAll(".role-card").forEach(card => card.addEventListener("click", () => card.classList.toggle("selected")));
   }
   document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.id, lobby.players, lobby.settings));
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
@@ -337,12 +357,7 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
 
 function renderRoleToggles(settings) {
   const allRoles = ["Dorfbewohner","Werwolf","Seherin","Hexe","Amor","Jäger","Kleines Mädchen"];
-  return allRoles.map(role => `
-    <div class="role-card ${settings[role] !== false ? 'selected' : ''}" data-role="${role}">
-      <i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i>
-      ${role}
-    </div>
-  `).join('');
+  return allRoles.map(role => `<div class="role-card ${settings[role] !== false ? 'selected' : ''}" data-role="${role}"><i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i> ${role}</div>`).join('');
 }
 
 // ========== SPIEL STARTEN ==========
@@ -360,6 +375,19 @@ async function startGame(lobbyCode, playersArr, settings) {
   while (rolePool.length < playersArr.length) rolePool.push("Dorfbewohner");
   const shuffled = [...playersArr].sort(() => Math.random() - 0.5);
   const assigned = shuffled.map((p, idx) => ({ ...p, role: rolePool[idx % rolePool.length], isAlive: true }));
+  // Rollenbeschreibungen
+  const roleDesc = {
+    "Dorfbewohner": "Du hast keine spezielle Fähigkeit. Deine Stimme zählt bei der Abstimmung.",
+    "Werwolf": "Du erwächst in der Nacht und wählst gemeinsam ein Opfer.",
+    "Seherin": "Du darfst in der Nacht die Rolle eines Spielers erkennen.",
+    "Hexe": "Du hast einen Heiltrank und einen Giftrank. Kannst eine Person retten oder töten.",
+    "Amor": "Du bestimmst in der ersten Nacht zwei Liebende.",
+    "Jäger": "Wenn du stirbst, darfst du einen anderen Spieler mitnehmen.",
+    "Kleines Mädchen": "Du darfst in der Nacht spionieren – aber mit 50% Risiko entdeckt zu werden."
+  };
+  // Eigene Rolle anzeigen
+  const myRole = assigned.find(p => p.id === currentUser.id)?.role;
+  if (myRole) showRoleFor10Seconds(myRole, roleDesc[myRole] || "Spiele deine Rolle klug.");
   let lovers = [];
   const amor = assigned.find(p => p.role === "Amor");
   if (amor) {
@@ -376,64 +404,52 @@ async function startGame(lobbyCode, playersArr, settings) {
 
 // ========== ERZÄHLER-DASHBOARD ==========
 function renderNarratorDashboard(lobby) {
-  const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData, votes, id } = lobby;
+  const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData, votes, id, mode } = lobby;
   let script = "", canNext = false;
   if (phase === "NIGHT") {
     const step = nightActionsOrder[currentNightIndex];
     if (step === "WEREWOLF") script = "🌕 Werwölfe, erwacht! Wählt ein Opfer.";
-    else if (step === "SMALL_GIRL") script = "👧 Kleines Mädchen – willst du spionieren? (50% Risiko)";
-    else if (step === "SEER") script = "🔮 Seherin, öffne die Augen. Wähle einen Spieler.";
-    else if (step === "WITCH") script = "🧪 Hexe, der Werwolfsangriff fiel auf... Du kannst heilen oder töten.";
+    else if (step === "SMALL_GIRL") script = "👧 Kleines Mädchen – willst du spionieren?";
+    else if (step === "SEER") script = "🔮 Seherin, öffne die Augen.";
+    else if (step === "WITCH") script = "🧪 Hexe, der Angriff fiel auf...";
     canNext = true;
   } else if (phase === "DAY") {
-    script = "🌞 Der Tag bricht an. Diskutiert! Klicke auf 'Weiter' für die Abstimmung.";
+    script = "🌞 Tag – Diskutiert! Weiter zur Abstimmung.";
     canNext = true;
   } else if (phase === "VOTING") {
-    script = "🗳️ Abstimmung! Jeder wählt einen Verdächtigen. Mehrheit entscheidet.";
+    script = "🗳️ Abstimmung! Jeder wählt.";
     canNext = true;
   }
-  
   let liveVotesHtml = '';
   if (phase === "NIGHT" && narratorStep === "WEREWOLF") {
-    const werewolfVotes = actionData.werewolfVotes || {};
-    const voteEntries = Object.entries(werewolfVotes);
-    liveVotesHtml = `<div class="vote-detail-list"><strong>🐺 Werwolf-Votes (detailliert):</strong>${voteEntries.length ? voteEntries.map(([pid, targetId]) => {
-      const voter = players.find(p => p.id === pid)?.name || "?";
-      const target = players.find(p => p.id === targetId)?.name || "?";
-      return `<div class="vote-detail-item"><span>${voter}</span><span>→ ${target}</span></div>`;
-    }).join('') : '<div>Noch keine Stimmen</div>'}</div>`;
+    const wv = actionData.werewolfVotes || {};
+    const entries = Object.entries(wv);
+    liveVotesHtml = `<div class="vote-detail-list"><strong>🐺 Werwolf-Votes:</strong>${entries.length ? entries.map(([pid, tid]) => `<div class="vote-detail-item"><span>${players.find(p=>p.id===pid)?.name||"?"}</span><span>→ ${players.find(p=>p.id===tid)?.name||"?"}</span></div>`).join('') : '<div>Keine Stimmen</div>'}</div>`;
   } else if (phase === "VOTING") {
-    const voteEntries = Object.entries(votes || {});
-    liveVotesHtml = `<div class="vote-detail-list"><strong>🗳️ Abstimmungsdetails:</strong>${voteEntries.length ? voteEntries.map(([pid, targetId]) => {
-      const voter = players.find(p => p.id === pid)?.name || "?";
-      const target = players.find(p => p.id === targetId)?.name || "?";
-      return `<div class="vote-detail-item"><span>${voter}</span><span>→ ${target}</span></div>`;
-    }).join('') : '<div>Noch keine Stimmen</div>'}</div>`;
+    const v = votes || {};
+    const entries = Object.entries(v);
+    liveVotesHtml = `<div class="vote-detail-list"><strong>🗳️ Abstimmungsdetails:</strong>${entries.length ? entries.map(([pid, tid]) => `<div class="vote-detail-item"><span>${players.find(p=>p.id===pid)?.name||"?"}</span><span>→ ${players.find(p=>p.id===tid)?.name||"?"}</span></div>`).join('') : '<div>Keine Stimmen</div>'}</div>`;
   }
-  
   const nextHandler = async () => {
     if (phase === "NIGHT") await advanceNightPhase(lobby);
     else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
     else if (phase === "VOTING") await resolveVoting(lobby);
   };
-  
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-torah"></i> Erzähler-Konsole — ${lobby.code}</h2>
       <div class="narrator-script"><i class="fas fa-microphone-alt"></i> <strong>Skript:</strong><br/>${script}</div>
-      <div><strong>Lebende Spieler:</strong> ${players.filter(p => p.isAlive).map(p => p.name).join(', ')}</div>
+      <div><strong>Lebende:</strong> ${players.filter(p=>p.isAlive).map(p=>p.name).join(', ')}</div>
       ${liveVotesHtml}
-      ${canNext ? `<button class="glass-button" id="narratorNext"><i class="fas fa-step-forward"></i> Weiter</button>` : ''}
+      ${canNext ? `<button class="glass-button" id="narratorNext">Weiter</button>` : ''}
       <button class="glass-button" id="endGame">Spiel beenden</button>
     </div>
   `);
   if (canNext) document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
-  document.getElementById("endGame")?.addEventListener("click", async () => {
-    if (confirm("Spiel zurücksetzen?")) { await deleteDoc(doc(db, "lobbies", lobby.id)); showLobbyMenu(); }
-  });
+  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
-// Nacht- und Abstimmungslogik (wie gehabt)
+// Nacht- und Abstimmungslogik (wie gehabt, aber gekürzt)
 async function advanceNightPhase(lobby) {
   const { id, nightActionsOrder, currentNightIndex } = lobby;
   const step = nightActionsOrder[currentNightIndex];
@@ -472,7 +488,7 @@ async function resolveNightDeath(lobby) {
   const dead = lobby.players.find(p => p.id === victim);
   if (dead?.role === "Jäger") {
     const alive = players.filter(p => p.isAlive);
-    const name = prompt(`⚰️ Jäger stirbt! Wähle Racheopfer: ${alive.map(p => p.name).join(", ")}`);
+    const name = prompt(`Jäger stirbt! Rache: ${alive.map(p=>p.name).join(", ")}`);
     const target = players.find(p => p.name === name);
     if (target) players = players.map(p => p.id === target.id ? { ...p, isAlive: false } : p);
   }
@@ -489,7 +505,7 @@ async function resolveVoting(lobby) {
   const lynched = lobby.players.find(p => p.id === maxId);
   if (lynched?.role === "Jäger") {
     const alive = players.filter(p => p.isAlive);
-    const revenge = prompt(`🔫 Jäger lyncht! Töte: ${alive.map(p => p.name).join(", ")}`);
+    const revenge = prompt(`Jäger lyncht! Töte: ${alive.map(p=>p.name).join(", ")}`);
     const target = players.find(p => p.name === revenge);
     if (target) players = players.map(p => p.id === target.id ? { ...p, isAlive: false } : p);
   }
@@ -503,135 +519,88 @@ async function resolveVoting(lobby) {
 
 // ========== SPIELER-ANSICHT (gekürzt, aber voll funktional) ==========
 function renderPlayerGameView(lobby, player) {
-  if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Du bist tot</h2><p>Beobachte das Spiel.</p></div>`);
-  const { phase, narratorStep, actionData, players } = lobby;
+  if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Tot</h2><p>Beobachte.</p></div>`);
+  const { phase, narratorStep, players } = lobby;
   if (phase === "NIGHT") {
     const role = player.role;
     if (narratorStep === "WEREWOLF" && role === "Werwolf") {
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
       render(`
-        <div class="glass-card"><h2>🐺 Wählt ein Opfer</h2>
+        <div class="glass-card"><h2>🐺 Opfer wählen</h2>
         <div class="vote-grid" id="wolfTargets">${targets.map(t => `<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
         <button class="glass-button" id="submitWolfVote">Bestätigen</button></div>
       `);
       let selected = null;
-      document.querySelectorAll("#wolfTargets .vote-card").forEach(card => card.addEventListener("click", function () { selected = this.dataset.id; document.querySelectorAll("#wolfTargets .vote-card").forEach(c => c.classList.remove("selected")); this.classList.add("selected"); }));
+      document.querySelectorAll("#wolfTargets .vote-card").forEach(c => c.addEventListener("click", function(){ selected=this.dataset.id; document.querySelectorAll("#wolfTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected"); }));
       document.getElementById("submitWolfVote")?.addEventListener("click", async () => {
-        if (selected) {
-          const current = lobby.actionData?.werewolfVotes || {};
-          current[player.id] = selected;
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.werewolfVotes": current });
-          render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`);
-        }
+        if(selected){ const cur = lobby.actionData?.werewolfVotes || {}; cur[player.id]=selected; await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.werewolfVotes":cur}); render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`); }
       });
       return;
     }
     if (narratorStep === "SMALL_GIRL" && role === "Kleines Mädchen") {
-      render(`
-        <div class="glass-card"><h2>👧 Durchs Schlüsselloch schauen?</h2>
-        <button class="glass-button" id="peekYes">Ja (50% Risiko)</button>
-        <button class="glass-button" id="peekNo">Nein</button></div>
-      `);
+      render(`<div class="glass-card"><h2>👧 Spionieren?</h2><button class="glass-button" id="peekYes">Ja (50% Risiko)</button><button class="glass-button" id="peekNo">Nein</button></div>`);
       document.getElementById("peekYes")?.addEventListener("click", async () => {
-        const risk = Math.random() < 0.5;
-        let result = risk ? "Du wirst entdeckt und stirbst!" : "Du siehst die Werwölfe: " + players.filter(p => p.role === "Werwolf" && p.isAlive).map(p => p.name).join(", ");
-        alert(result);
-        if (risk) {
-          const updated = players.map(p => p.id === player.id ? { ...p, isAlive: false } : p);
-          await updateDoc(doc(db, "lobbies", lobby.id), { players: updated, "actionData.smallGirlPeeked": true });
-        } else {
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true });
-        }
+        const risk = Math.random()<0.5;
+        alert(risk?"Entdeckt und stirbst!":"Werwölfe: "+players.filter(p=>p.role==="Werwolf"&&p.isAlive).map(p=>p.name).join(", "));
+        if(risk){ const updated = players.map(p=>p.id===player.id?{...p,isAlive:false}:p); await updateDoc(doc(db,"lobbies",lobby.id),{players:updated,"actionData.smallGirlPeeked":true}); }
+        else await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true});
       });
-      document.getElementById("peekNo")?.addEventListener("click", async () => {
-        await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true });
-        render(`<div class="glass-card"><p>Du bleibst im Versteck.</p></div>`);
-      });
+      document.getElementById("peekNo")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true}); render(`<div class="glass-card"><p>Sicher versteckt.</p></div>`); });
       return;
     }
     if (narratorStep === "SEER" && role === "Seherin") {
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
-      render(`
-        <div class="glass-card"><h2>🔮 Wähle einen Spieler</h2>
-        <div class="vote-grid" id="seerTargets">${targets.map(t => `<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
-        <button class="glass-button" id="seerSubmit">Rolle erkennen</button></div>
-      `);
+      render(`<div class="glass-card"><h2>🔮 Wähle Spieler</h2><div class="vote-grid" id="seerTargets">${targets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div><button class="glass-button" id="seerSubmit">Erkennen</button></div>`);
       let selected = null;
-      document.querySelectorAll("#seerTargets .vote-card").forEach(card => card.addEventListener("click", function () { selected = this.dataset.id; document.querySelectorAll("#seerTargets .vote-card").forEach(c => c.classList.remove("selected")); this.classList.add("selected"); }));
-      document.getElementById("seerSubmit")?.addEventListener("click", async () => {
-        const target = players.find(p => p.id === selected);
-        alert(`Die Rolle von ${target.name} ist: ${target.role}`);
-        await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.seerTarget": selected });
-      });
+      document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
+      document.getElementById("seerSubmit")?.addEventListener("click", async () => { const target=players.find(p=>p.id===selected); alert(`Rolle von ${target.name}: ${target.role}`); await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.seerTarget":selected}); });
       return;
     }
     if (narratorStep === "WITCH" && role === "Hexe") {
       const victimId = lobby.actionData?.nightVictim;
-      const victimName = players.find(p => p.id === victimId)?.name || "niemand";
-      render(`
-        <div class="glass-card"><h2>🧪 Hexe – ${victimName} wurde angegriffen</h2>
-        <button class="glass-button" id="healBtn">💚 Heilen</button>
-        <button class="glass-button" id="poisonBtn">☠️ Vergiften</button>
-        <button class="glass-button" id="skipWitch">Nichts tun</button></div>
-      `);
-      document.getElementById("healBtn")?.addEventListener("click", async () => {
-        await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.healTarget": victimId, "actionData.witch.usedHeal": true });
-        alert("Du hast geheilt!");
-      });
-      document.getElementById("poisonBtn")?.addEventListener("click", async () => {
-        const aliveOthers = players.filter(p => p.isAlive && p.id !== player.id);
-        const name = prompt(`Wen vergiften? ${aliveOthers.map(p => p.name).join(", ")}`);
-        const target = aliveOthers.find(p => p.name === name);
-        if (target) {
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.poisonTarget": target.id, "actionData.witch.usedPoison": true });
-          alert(`Du hast ${target.name} vergiftet!`);
-        }
-      });
+      const victimName = players.find(p=>p.id===victimId)?.name||"niemand";
+      render(`<div class="glass-card"><h2>🧪 Hexe – ${victimName} angegriffen</h2><button class="glass-button" id="healBtn">💚 Heilen</button><button class="glass-button" id="poisonBtn">☠️ Vergiften</button><button class="glass-button" id="skipWitch">Nichts</button></div>`);
+      document.getElementById("healBtn")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.healTarget":victimId,"actionData.witch.usedHeal":true}); alert("Geheilt!"); });
+      document.getElementById("poisonBtn")?.addEventListener("click", async () => { const aliveOthers=players.filter(p=>p.isAlive&&p.id!==player.id); const name=prompt(`Vergiften: ${aliveOthers.map(p=>p.name).join(", ")}`); const target=aliveOthers.find(p=>p.name===name); if(target){ await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.poisonTarget":target.id,"actionData.witch.usedPoison":true}); alert(`Vergiftet: ${target.name}`); } });
       document.getElementById("skipWitch")?.addEventListener("click", () => alert("Nichts getan."));
       return;
     }
-    render(`<div class="glass-card"><p>🌙 Nacht – warte auf den Erzähler.</p></div>`);
+    render(`<div class="glass-card"><p>🌙 Nacht – warte.</p></div>`);
     return;
   }
   if (phase === "VOTING") {
     const aliveTargets = players.filter(p => p.isAlive && p.id !== player.id);
     render(`
       <div class="glass-card"><h2>🗳️ Wen hinrichten?</h2>
-      <div class="vote-grid" id="voteGrid">${aliveTargets.map(t => `<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
+      <div class="vote-grid" id="voteGrid">${aliveTargets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
       <button class="glass-button" id="castVote">Abstimmen</button></div>
     `);
     let selected = null;
-    document.querySelectorAll("#voteGrid .vote-card").forEach(card => card.addEventListener("click", function () { selected = this.dataset.id; document.querySelectorAll("#voteGrid .vote-card").forEach(c => c.classList.remove("selected")); this.classList.add("selected"); }));
-    document.getElementById("castVote")?.addEventListener("click", async () => {
-      if (selected) {
-        const newVotes = { ...(lobby.votes || {}), [player.id]: selected };
-        await updateDoc(doc(db, "lobbies", lobby.id), { votes: newVotes });
-        render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`);
-      }
-    });
+    document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
+    document.getElementById("castVote")?.addEventListener("click", async () => { if(selected){ const newVotes={...(lobby.votes||{}),[player.id]:selected}; await updateDoc(doc(db,"lobbies",lobby.id),{votes:newVotes}); render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`); } });
     return;
   }
-  render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Der Erzähler leitet die Runde.</p></div>`);
+  render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Erzähler leitet.</p></div>`);
 }
 
-// ========== HAUPTSMENÜ ==========
+// ========== HAUPTSMENÜ (mit Auswahl Online/Privat) ==========
 function renderMainMenu() {
   render(`
     <div class="glass-card" style="max-width: 600px; margin:0 auto;">
       <h1><i class="fas fa-moon"></i> WERWOLF MOBILE</h1>
       <input type="text" id="playerName" placeholder="Dein Name" value="">
       <div class="icon-grid">
-        <div class="icon-button" id="createLobbyIcon">
-          <i class="fas fa-plus-circle"></i>
-          <span>Lobby erstellen</span>
+        <div class="icon-button" id="createOnlineLobby">
+          <i class="fas fa-globe"></i>
+          <span>🌐 Online-Lobby</span>
+        </div>
+        <div class="icon-button" id="createPrivateLobby">
+          <i class="fas fa-users"></i>
+          <span>🏠 Private Lobby</span>
         </div>
         <div class="icon-button" id="joinLobbyIcon">
           <i class="fas fa-sign-in-alt"></i>
-          <span>Lobby beitreten</span>
-        </div>
-        <div class="icon-button" id="findLobbyIcon">
-          <i class="fas fa-search"></i>
-          <span>Lobby finden</span>
+          <span>Beitreten</span>
         </div>
       </div>
       <div id="lobbyList"></div>
@@ -639,124 +608,95 @@ function renderMainMenu() {
   `);
   const nameInput = document.getElementById("playerName");
   nameInput?.addEventListener("input", (e) => { currentUser.name = e.target.value; });
-  document.getElementById("createLobbyIcon")?.addEventListener("click", () => showCreateLobbyModal());
+  document.getElementById("createOnlineLobby")?.addEventListener("click", () => showCreateLobbyModal("online"));
+  document.getElementById("createPrivateLobby")?.addEventListener("click", () => showCreateLobbyModal("private"));
   document.getElementById("joinLobbyIcon")?.addEventListener("click", () => showJoinLobbyModal());
-  document.getElementById("findLobbyIcon")?.addEventListener("click", () => refreshLobbyList());
   refreshLobbyList();
 }
-
 async function refreshLobbyList() {
+  if(!firebaseReady) return;
   const q = query(collection(db, "lobbies"), where("gameStarted", "==", false), where("isPublic", "==", true));
   const snap = await getDocs(q);
   const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
   const listDiv = document.getElementById("lobbyList");
-  if (listDiv) {
-    if (lobbies.length === 0) listDiv.innerHTML = '<p>Keine öffentlichen Lobbys gefunden.</p>';
-    else listDiv.innerHTML = `<h3>Öffentliche Lobbys</h3><div class="player-list">${lobbies.map(l => `<div class="player-tag">${l.code} (${l.players.length} Spieler) <button class="glass-button glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
-    document.querySelectorAll("[data-code]").forEach(btn => btn.addEventListener("click", async (e) => {
-      const code = btn.dataset.code;
-      const name = document.getElementById("playerName")?.value.trim();
-      if (!name) { alert("Bitte gib deinen Namen ein."); return; }
-      currentUser.name = name;
-      await joinLobby(code, name);
-    }));
+  if(listDiv){
+    if(lobbies.length===0) listDiv.innerHTML='<p>Keine öffentlichen Lobbys.</p>';
+    else listDiv.innerHTML=`<h3>Öffentliche Lobbys</h3><div class="player-list">${lobbies.map(l=>`<div class="player-tag">${l.code} (${l.players.length}) <button class="glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
+    document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) alert("Name eingeben"); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
   }
 }
-
-function showCreateLobbyModal() {
+function showCreateLobbyModal(mode) {
   const name = document.getElementById("playerName")?.value.trim();
-  if (!name) { alert("Bitte gib deinen Namen ein."); return; }
+  if(!name){ alert("Name eingeben"); return; }
   currentUser.name = name;
-  let isPublic = true;
-  let settings = { Dorfbewohner: true, Werwolf: true, Seherin: true, Hexe: true, Amor: true, Jäger: true, "Kleines Mädchen": true };
+  let isPublic = (mode === "online"); // online = öffentlich, private = privat
+  let settings = { Dorfbewohner:true, Werwolf:true, Seherin:true, Hexe:true, Amor:true, Jäger:true, "Kleines Mädchen":true };
   const modalContent = `
-    <h3>Lobby erstellen</h3>
+    <h3>${mode==='online'?'Online-Lobby erstellen':'Private Lobby erstellen'}</h3>
+    ${mode==='private' ? `
     <div class="switch-container">
-      <span class="switch-label"><i class="fas ${isPublic ? 'fa-globe' : 'fa-lock'}"></i> <span id="privacyText">Öffentlich</span></span>
-      <label class="switch"><input type="checkbox" id="publicSwitch" checked><span class="slider"></span></label>
-    </div>
+      <span class="switch-label"><i class="fas ${isPublic ? 'fa-globe' : 'fa-lock'}"></i> <span id="privacyText">${isPublic ? 'Öffentlich' : 'Privat'}</span></span>
+      <label class="switch"><input type="checkbox" id="publicSwitch" ${isPublic ? 'checked' : ''}><span class="slider"></span></label>
+    </div>` : '<p>Online-Modus: automatisch öffentlich</p>'}
     <div><strong>Rollen auswählen:</strong></div>
     <div class="roles-grid" id="roleSettingsModal">
-      ${Object.keys(settings).map(role => `<div class="role-card selected" data-role="${role}"><i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i> ${role}</div>`).join('')}
+      ${Object.keys(settings).map(role=>`<div class="role-card selected" data-role="${role}"><i class="fas ${role==='Werwolf'?'fa-paw':role==='Seherin'?'fa-eye':role==='Hexe'?'fa-flask':role==='Amor'?'fa-heart':role==='Jäger'?'fa-crosshairs':role==='Kleines Mädchen'?'fa-child':'fa-user'}"></i> ${role}</div>`).join('')}
     </div>
-    <button class="glass-button" id="confirmCreateLobby" style="margin-top:1rem;">Erstellen</button>
+    <button class="glass-button" id="confirmCreate" style="margin-top:1rem;">Erstellen</button>
   `;
   showModal(modalContent, null);
   const modalDiv = document.querySelector(".modal");
-  const privacySpan = modalDiv.querySelector("#privacyText");
-  const publicSwitch = modalDiv.querySelector("#publicSwitch");
-  publicSwitch.addEventListener("change", (e) => {
-    isPublic = e.target.checked;
-    privacySpan.innerHTML = isPublic ? '<i class="fas fa-globe"></i> Öffentlich' : '<i class="fas fa-lock"></i> Privat';
-  });
-  modalDiv.querySelectorAll(".role-card").forEach(card => {
-    card.addEventListener("click", () => card.classList.toggle("selected"));
-  });
-  modalDiv.querySelector("#confirmCreateLobby")?.addEventListener("click", async () => {
-    const newSettings = {};
-    modalDiv.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
-    await createLobby(currentUser.name, isPublic, newSettings);
+  if(mode==='private'){
+    const privacySpan = modalDiv.querySelector("#privacyText");
+    const publicSwitch = modalDiv.querySelector("#publicSwitch");
+    publicSwitch.addEventListener("change",(e)=>{ isPublic=e.target.checked; privacySpan.innerHTML=isPublic?'🌐 Öffentlich':'🔒 Privat'; });
+  }
+  modalDiv.querySelectorAll(".role-card").forEach(card=>card.addEventListener("click",()=>card.classList.toggle("selected")));
+  modalDiv.querySelector("#confirmCreate")?.addEventListener("click",async()=>{
+    const newSettings={};
+    modalDiv.querySelectorAll(".role-card").forEach(card=>{ newSettings[card.dataset.role]=card.classList.contains("selected"); });
+    await createLobby(currentUser.name, (mode==='online'?true:isPublic), mode, newSettings);
     modalDiv.remove();
   });
 }
-
 function showJoinLobbyModal() {
   const name = document.getElementById("playerName")?.value.trim();
-  if (!name) { alert("Bitte gib deinen Namen ein."); return; }
+  if(!name){ alert("Name eingeben"); return; }
   currentUser.name = name;
-  const modalContent = `
-    <h3>Lobby beitreten</h3>
-    <input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase">
-    <button class="glass-button" id="confirmJoinLobby" style="margin-top:1rem;">Beitreten</button>
-  `;
+  const modalContent = `<h3>Lobby beitreten</h3><input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase"><button class="glass-button" id="confirmJoin" style="margin-top:1rem;">Beitreten</button>`;
   showModal(modalContent, null);
   const modalDiv = document.querySelector(".modal");
-  modalDiv.querySelector("#confirmJoinLobby")?.addEventListener("click", async () => {
-    let code = modalDiv.querySelector("#lobbyCodeInput").value.trim().toUpperCase();
-    if (!code) return;
-    try {
-      await joinLobby(code, currentUser.name);
-      modalDiv.remove();
-    } catch(e) { alert(e.message); }
-  });
+  modalDiv.querySelector("#confirmJoin")?.addEventListener("click",async()=>{ const code=modalDiv.querySelector("#lobbyCodeInput").value.trim().toUpperCase(); if(code) try{ await joinLobby(code,currentUser.name); modalDiv.remove(); }catch(e){ alert(e.message); } });
 }
-
 function showLobbyMenu() { renderMainMenu(); }
 
-// ========== APP INIT (nach Consent) ==========
-function initApp() {
-  deviceId = localStorage.getItem("ww_device_id");
-  if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
-  currentUser.id = localStorage.getItem("ww_player_id") || uuid();
-  localStorage.setItem("ww_player_id", currentUser.id);
-  currentUser.deviceId = deviceId;
-  renderMainMenu();
-}
-
-// ========== PWA-INSTALLATION ==========
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  const installDiv = document.getElementById("installPrompt");
-  if (installDiv) installDiv.style.display = "block";
-  document.getElementById("installBtn")?.addEventListener("click", async () => {
-    if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === "accepted") deferredPrompt = null; installDiv.style.display = "none"; }
-  });
-  document.getElementById("closeInstallBtn")?.addEventListener("click", () => { installDiv.style.display = "none"; });
-});
-
-// ========== EVENT LISTENER FÜR CONSENT & RECHTSTEXTE ==========
+// ========== INIT & EVENT LISTENER ==========
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("accept-consent")?.addEventListener("click", acceptConsent);
   document.getElementById("reject-consent")?.addEventListener("click", rejectConsent);
   document.getElementById("show-impressum")?.addEventListener("click", (e) => { e.preventDefault(); showImpressum(); });
   document.getElementById("show-datenschutz")?.addEventListener("click", (e) => { e.preventDefault(); showDatenschutz(); });
-  document.getElementById("close-legal-modal")?.addEventListener("click", () => {
-    document.getElementById("legal-modal").style.display = "none";
-  });
-  if (!consentGiven) showConsentBanner();
+  document.getElementById("close-legal-modal")?.addEventListener("click", closeLegalModal);
+  document.getElementById("offline-retry")?.addEventListener("click", () => { if(navigator.onLine){ hideOfflineModal(); initApp(); } else alert("Immer noch offline."); });
+  if(!consentGiven) showConsentModal();
   else initApp();
 });
-
-// Service Worker
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js");
+function initApp() {
+  if(!firebaseReady){ alert("Firebase nicht erreichbar"); return; }
+  if(!navigator.onLine){ showOfflineModal(); return; }
+  deviceId = localStorage.getItem("ww_device_id");
+  if(!deviceId){ deviceId=uuid(); localStorage.setItem("ww_device_id",deviceId); }
+  currentUser.id = localStorage.getItem("ww_player_id") || uuid();
+  localStorage.setItem("ww_player_id", currentUser.id);
+  currentUser.deviceId = deviceId;
+  renderMainMenu();
+}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const installDiv = document.getElementById("installPrompt");
+  if(installDiv) installDiv.style.display = "block";
+  document.getElementById("installBtn")?.addEventListener("click", async () => { if(deferredPrompt){ deferredPrompt.prompt(); const {outcome}=await deferredPrompt.userChoice; if(outcome==="accepted") deferredPrompt=null; installDiv.style.display="none"; } });
+  document.getElementById("closeInstallBtn")?.addEventListener("click", () => { installDiv.style.display="none"; });
+});
+if("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js");

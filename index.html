@@ -22,24 +22,23 @@
     </div>
   </div>
 
-  <!-- DSGVO-Consent-Banner (wird nur angezeigt, wenn keine Einwilligung) -->
-  <div id="consent-banner" class="consent-banner" style="display: none;">
-    <div class="consent-banner-content glass-card">
-      <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
-        <i class="fas fa-shield-alt" style="font-size: 2rem; color: #c084fc;"></i>
-        <h3 style="margin: 0;">Datenschutz-Einstellungen</h3>
+  <!-- Consent-Popup (zentral, wie Homescreen) -->
+  <div id="consent-modal" class="modal" style="display: none;">
+    <div class="modal-content glass-card" style="max-width: 450px; text-align: center;">
+      <div style="margin-bottom: 1rem;">
+        <i class="fas fa-shield-alt" style="font-size: 3rem; color: #c084fc;"></i>
       </div>
-      <p style="margin-bottom: 1.5rem; line-height: 1.5;">
-        Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen und Ihnen den Wiedereinstieg zu erleichtern. 
-        Diese Daten sind technisch notwendig und werden nicht an Dritte weitergegeben. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
-        Ihre Einwilligung können Sie jederzeit über den „Datenschutz“-Button widerrufen.
+      <h3 style="margin-bottom: 0.5rem;">Datenschutz-Einwilligung</h3>
+      <p style="margin-bottom: 1rem; line-height: 1.5;">
+        Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen.
+        Diese Daten sind technisch notwendig. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
       </p>
       <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <button id="accept-consent" class="glass-button" style="background: #22c55e;">🍪 Akzeptieren & Weiter</button>
-        <button id="reject-consent" class="glass-button" style="background: #ef4444;">❌ Ablehnen</button>
+        <button id="accept-consent" class="glass-button" style="background: #22c55e;">Akzeptieren</button>
+        <button id="reject-consent" class="glass-button" style="background: #ef4444;">Ablehnen</button>
       </div>
-      <div style="margin-top: 1.5rem; text-align: center; font-size: 0.85rem;">
-        <a href="#" id="show-impressum" style="color: #c084fc; margin-right: 1rem;">Impressum</a>
+      <div style="margin-top: 1.5rem; font-size: 0.85rem;">
+        <a href="#" id="show-impressum" style="color: #c084fc;">Impressum</a> | 
         <a href="#" id="show-datenschutz" style="color: #c084fc;">Datenschutzerklärung</a>
       </div>
     </div>
@@ -49,10 +48,28 @@
   <div id="legal-modal" class="modal" style="display: none;">
     <div class="modal-content glass-card" style="max-width: 550px; max-height: 80vh; overflow-y: auto;">
       <h3 id="legal-modal-title">Impressum</h3>
-      <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.5;">
-        <!-- Inhalt wird dynamisch eingefügt -->
-      </div>
+      <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.5;"></div>
       <button class="glass-button" id="close-legal-modal">Schließen</button>
+    </div>
+  </div>
+
+  <!-- Offline-Hinweis (zentral) -->
+  <div id="offline-modal" class="modal" style="display: none;">
+    <div class="modal-content glass-card" style="max-width: 400px; text-align: center;">
+      <i class="fas fa-wifi" style="font-size: 3rem; color: #ef4444; margin-bottom: 1rem;"></i>
+      <h3>Keine Internetverbindung</h3>
+      <p style="margin: 1rem 0;">Bitte überprüfen Sie Ihre Netzwerkverbindung und versuchen Sie es erneut.</p>
+      <button class="glass-button" id="offline-retry">Erneut versuchen</button>
+    </div>
+  </div>
+
+  <!-- Rollen-Anzeige (nach Spielstart) -->
+  <div id="role-display" class="role-display" style="display: none;">
+    <div class="role-display-content glass-card">
+      <i class="fas fa-mask" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+      <h3 id="role-name">Deine Rolle</h3>
+      <p id="role-description" style="margin-top: 0.5rem;"></p>
+      <div class="role-timer" id="role-timer">10</div>
     </div>
   </div>
 

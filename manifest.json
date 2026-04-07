@@ -1,7 +1,7 @@
 {
   "name": "Werwolf Mobile",
   "short_name": "Werwolf",
-  "description": "Synchrones Werwolf-Spiel mit Erzähler-Modus",
+  "description": "Synchrones Werwolf-Spiel",
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#7c3aed",
