@@ -472,6 +472,88 @@ input:checked + .slider:before {
   max-height: 80vh;
   overflow-y: auto;
 }
+.modal-content.large {
+  max-width: 750px;
+}
+
+/* Code Input Boxes */
+.code-input-container {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+.code-box {
+  width: 3.2rem;
+  height: 4rem;
+  font-size: 1.8rem;
+  text-align: center;
+  text-transform: uppercase;
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(139,92,246,0.4);
+  color: white;
+  transition: all 0.2s;
+  padding: 0;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+}
+.code-box:focus {
+  border-color: #a855f7;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.4), inset 0 2px 4px rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.12);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+/* Join Split Layout */
+.join-split {
+  display: flex;
+  gap: 2rem;
+  text-align: left;
+}
+.join-split-left {
+  flex: 1;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  padding-right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+.join-split-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.public-lobby-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  padding: 0.8rem 1rem;
+  border-radius: 1rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid rgba(139,92,246,0.2);
+  transition: all 0.2s;
+}
+.public-lobby-item:hover {
+  background: rgba(139,92,246,0.15);
+  border-color: rgba(139,92,246,0.4);
+}
+.public-lobby-info {
+  display: flex;
+  flex-direction: column;
+}
+.public-lobby-code {
+  font-weight: bold;
+  font-size: 1.1rem;
+  color: #c084fc;
+}
+.public-lobby-players {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
 
 /* Vote-Liste für Erzähler */
 .vote-detail-list {

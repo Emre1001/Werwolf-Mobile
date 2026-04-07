@@ -992,16 +992,93 @@ function showCreateLobbyModal(type) {
     });
   }
 }
-function showJoinLobbyModal() {
+async function showJoinLobbyModal() {
   const name = document.getElementById("playerName")?.value.trim();
   if(!name){ flashNameInput(); return; }
   currentUser.name = name;
-  const modalContent = `<h3>Lobby beitreten</h3><input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase"><button class="glass-button" id="confirmJoin" style="margin-top:1rem;">Beitreten</button>`;
+  const modalContent = `
+    <div class="join-split">
+      <div class="join-split-left">
+        <h3 style="font-size: 1.3rem;"><i class="fas fa-globe"></i> Öffentliche Lobbys</h3>
+        <div id="joinModalLobbyList" style="margin-top: 1rem; max-height: 250px; overflow-y: auto;">
+          <div class="loader"></div>
+        </div>
+      </div>
+      <div class="join-split-right">
+        <h3 style="font-size: 1.3rem;"><i class="fas fa-key"></i> Code eingeben</h3>
+        <div class="code-input-container" id="codeInputContainer">
+          <input type="text" maxlength="1" class="code-box">
+          <input type="text" maxlength="1" class="code-box">
+          <input type="text" maxlength="1" class="code-box">
+          <input type="text" maxlength="1" class="code-box">
+          <input type="text" maxlength="1" class="code-box">
+          <input type="text" maxlength="1" class="code-box">
+        </div>
+        <button class="glass-button" id="confirmJoin" style="margin-top:1rem; width: 100%; max-width: 200px;">Beitreten</button>
+      </div>
+    </div>
+  `;
   const modalDiv = showModal(modalContent, null);
-  modalDiv.querySelector("#confirmJoin")?.addEventListener("click", async () => {
-    const code = modalDiv.querySelector("#lobbyCodeInput").value.trim().toUpperCase();
-    if(code) try{ await joinLobby(code, currentUser.name); modalDiv.remove(); } catch(e){ alert(e.message); }
+  modalDiv.querySelector(".modal-content").classList.add("large");
+
+  // 6-stellige Code-Boxen Logik
+  const boxes = modalDiv.querySelectorAll(".code-box");
+  boxes.forEach((box, index) => {
+    box.addEventListener("input", (e) => {
+      box.value = box.value.toUpperCase();
+      if (box.value && index < boxes.length - 1) boxes[index + 1].focus();
+    });
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !box.value && index > 0) boxes[index - 1].focus();
+      else if (e.key === "Enter") modalDiv.querySelector("#confirmJoin").click();
+    });
   });
+  setTimeout(() => boxes[0]?.focus(), 100);
+
+  // Beitreten per Code Bestätigen
+  modalDiv.querySelector("#confirmJoin")?.addEventListener("click", async () => {
+    const code = Array.from(boxes).map(b => b.value).join("").toUpperCase();
+    if(code && code.length === 6) {
+      try { await joinLobby(code, currentUser.name); modalDiv.remove(); } catch(e){ alert(e.message); }
+    } else {
+      boxes.forEach(b => { if(!b.value) { b.classList.add("error-flash"); setTimeout(() => b.classList.remove("error-flash"), 800); }});
+    }
+  });
+
+  // Öffentliche Lobbys abrufen
+  if(!firebaseReady) {
+    modalDiv.querySelector("#joinModalLobbyList").innerHTML = '<p>Keine Internetverbindung.</p>';
+    return;
+  }
+  const q = query(collection(db, "lobbies"), where("gameStarted", "==", false), where("isPublic", "==", true));
+  try {
+    const snap = await getDocs(q);
+    const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
+    await cleanupStaleLobbies(lobbies);
+    const activeLobbies = lobbies.filter(l => (Date.now() - (l.lastUpdate || 0)) < 5 * 60 * 1000);
+    const listDiv = modalDiv.querySelector("#joinModalLobbyList");
+    if(activeLobbies.length === 0) {
+      listDiv.innerHTML = '<p style="margin-top:1rem; opacity:0.7;">Keine öffentlichen Lobbys verfügbar.</p>';
+    } else {
+      listDiv.innerHTML = activeLobbies.map(l => `
+        <div class="public-lobby-item">
+          <div class="public-lobby-info">
+            <span class="public-lobby-code">${l.code}</span>
+            <span class="public-lobby-players"><i class="fas fa-users"></i> ${l.players.length} Spieler</span>
+          </div>
+          <button class="glass-button glass-button-small" data-join-code="${l.code}">Beitreten</button>
+        </div>
+      `).join('');
+      listDiv.querySelectorAll("[data-join-code]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          try { await joinLobby(btn.dataset.joinCode, currentUser.name); modalDiv.remove(); } catch(e){ alert(e.message); }
+        });
+      });
+    }
+  } catch (e) {
+    console.error(e);
+    modalDiv.querySelector("#joinModalLobbyList").innerHTML = '<p>Fehler beim Laden.</p>';
+  }
 }
 function showLobbyMenu() { hideChat(); renderMainMenu(); }
 
