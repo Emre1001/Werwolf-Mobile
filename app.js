@@ -197,25 +197,112 @@ function attachListener(lobbyId) {
       return;
     }
     renderByState(data);
+    if (data.mode === "online" && data.gameStarted && data.hostId === currentUser.id) {
+      checkAutomaticAdvance(data);
+    }
   });
+}
+
+/**
+ * Automatische Phasensteuerung im Online-Modus.
+ * Wird nur vom Host ausgeführt, um Race-Conditions zu vermeiden.
+ */
+async function checkAutomaticAdvance(lobby) {
+  const { phase, narratorStep, players, actionData, votes, settings } = lobby;
+  
+  if (phase === "NIGHT") {
+    if (narratorStep === "WEREWOLF") {
+      const aliveWolves = players.filter(p => p.isAlive && p.role === "Werwolf");
+      const voteCount = Object.keys(actionData.werewolfVotes || {}).length;
+      if (aliveWolves.length > 0 && voteCount >= aliveWolves.length) {
+        await advanceNightPhase(lobby);
+      } else if (aliveWolves.length === 0) {
+        await advanceNightPhase(lobby);
+      }
+    } else if (narratorStep === "SMALL_GIRL") {
+      const girl = players.find(p => p.role === "Kleines Mädchen");
+      if (!girl || !girl.isAlive || actionData.smallGirlPeeked) {
+        await advanceNightPhase(lobby);
+      }
+    } else if (narratorStep === "SEER") {
+      const seer = players.find(p => p.role === "Seherin");
+      if (!seer || !seer.isAlive || actionData.seerTarget) {
+        await advanceNightPhase(lobby);
+      }
+    } else if (narratorStep === "WITCH") {
+      const witch = players.find(p => p.role === "Hexe");
+      // Die Hexe ist etwas komplexer, da sie 2 Tränke hat. 
+      // Wir warten hier vielleicht auf eine Bestätigung oder überspringen, wenn tot.
+      if (!witch || !witch.isAlive) {
+        await advanceNightPhase(lobby);
+      }
+      // HINWEIS: Manuelle Steuerung für Hexe im Online-Modus empfohlen, 
+      // oder wir fügen einen "Fertig"-Button für sie ein.
+    }
+  } else if (phase === "VOTING") {
+    const alivePlayers = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
+    const voteCount = Object.keys(votes || {}).length;
+    if (voteCount >= alivePlayers.length) {
+      await resolveVoting(lobby);
+    }
+  }
 }
 
 function renderByState(lobby) {
   const players = lobby.players || [];
   const currentPlayer = players.find(p => p.id === currentUser.id);
   const isHost = (lobby.hostId === currentUser.id);
-  const isConfirmedNarrator = (lobby.confirmedNarratorId === currentUser.id) || (lobby.mode === "online" && lobby.confirmedNarratorId === "AUTOMATIC");
+  // Nur der tatsächlich ausgewählte Mensch ist der "Erzähler". 
+  // "AUTOMATIC" (Online-Modus) bedeutet, es gibt keinen privilegierten menschlichen Erzähler.
+  const isHumanNarrator = (lobby.confirmedNarratorId === currentUser.id);
+
   if (!lobby.gameStarted) {
     renderLobbyView(lobby, isHost, currentPlayer);
     return;
   }
-  if (isConfirmedNarrator || lobby.mode === "online") {
+
+  // Fallunterscheidung nach Spielstart:
+  if (isHumanNarrator) {
+    // Der Erzähler sieht alles (Dashboard mit Rollen/Votes)
     renderNarratorDashboard(lobby);
   } else if (currentPlayer) {
+    // Spieler sehen ihre eigene Rolle und den aktuellen Spielstatus (Script)
     renderPlayerGameView(lobby, currentPlayer);
+  } else if (isHost) {
+    // Sonderfall: Host ist nicht Spieler und nicht Erzähler (Beobachter-Host)
+    renderHostOnlyGameView(lobby);
   } else {
-    render(`<div class="glass-card"><p>Nicht in Lobby.</p><button class="glass-button" onclick="location.reload()">Neu laden</button></div>`);
+    render(`<div class="glass-card"><p>Beobachter-Modus.</p><button class="glass-button" onclick="location.reload()">Neu laden</button></div>`);
   }
+}
+
+function getNarratorScript(lobby) {
+  const { phase, narratorStep, nightActionsOrder, currentNightIndex } = lobby;
+  if (phase === "NIGHT") {
+    const step = nightActionsOrder[currentNightIndex];
+    if (step === "WEREWOLF") return "🌕 Werwölfe, erwacht! Wählt ein Opfer.";
+    if (step === "SMALL_GIRL") return "👧 Kleines Mädchen – willst du spionieren?";
+    if (step === "SEER") return "🔮 Seherin, öffne die Augen.";
+    if (step === "WITCH") return "🧪 Hexe, der Angriff fiel auf...";
+    return "🌙 Nacht – Die Stadt schläft.";
+  } else if (phase === "DAY") {
+    return "🌞 Tag – Diskutiert! Wer ist ein Werwolf?";
+  } else if (phase === "VOTING") {
+    return "🗳️ Abstimmung! Wer soll erhängt werden?";
+  }
+  return "";
+}
+
+function renderHostOnlyGameView(lobby) {
+  render(`
+    <div class="glass-card">
+      <h2><i class="fas fa-crown"></i> Host-Konsole (Eingeschränkt)</h2>
+      <div class="narrator-script"><i class="fas fa-info-circle"></i> <strong>Status:</strong><br/>${getNarratorScript(lobby)}</div>
+      <p>Du bist nur der Host. Der Erzähler leitet das Spiel.</p>
+      <button class="glass-button" id="endGame">Spiel beenden</button>
+    </div>
+  `);
+  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
 function renderLobbyView(lobby, isHost, currentPlayer) {
@@ -296,7 +383,7 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
     if (saveBtn) saveBtn.addEventListener("click", async () => { const newSettings = {}; document.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); }); await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings }); });
     document.querySelectorAll(".role-card").forEach(card => card.addEventListener("click", () => card.classList.toggle("selected")));
   }
-  document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.id, lobby.players, lobby.settings));
+  document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby));
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
 }
 
@@ -305,12 +392,21 @@ function renderRoleToggles(settings) {
   return allRoles.map(role => `<div class="role-card ${settings[role] !== false ? 'selected' : ''}" data-role="${role}"><i class="fas ${role === 'Werwolf' ? 'fa-paw' : role === 'Seherin' ? 'fa-eye' : role === 'Hexe' ? 'fa-flask' : role === 'Amor' ? 'fa-heart' : role === 'Jäger' ? 'fa-crosshairs' : role === 'Kleines Mädchen' ? 'fa-child' : 'fa-user'}"></i> ${role}</div>`).join('');
 }
 
-async function startGame(lobbyCode, playersArr, settings) {
-  // Prüfe nochmal Mindestanzahl
-  if (playersArr.length < 4) {
-    alert("Es werden mindestens 4 Spieler benötigt!");
+async function startGame(lobby) {
+  const { id: lobbyCode, players: playersArr, settings, confirmedNarratorId, mode } = lobby;
+  
+  // Bestimme Spieler, die eine Rolle erhalten (Erzähler spielt im Lokal-Modus nicht mit)
+  let playersToAssign = [...playersArr];
+  if (mode === "lokal" && confirmedNarratorId && confirmedNarratorId !== "AUTOMATIC") {
+    playersToAssign = playersToAssign.filter(p => p.id !== confirmedNarratorId);
+  }
+
+  // Prüfe nochmal Mindestanzahl (Spieler die Rollen bekommen)
+  if (playersToAssign.length < 4) {
+    alert("Es werden mindestens 4 Spieler (ohne Erzähler) benötigt!");
     return;
   }
+
   const enabledRoles = [];
   if (settings.Dorfbewohner !== false) enabledRoles.push("Dorfbewohner");
   if (settings.Werwolf !== false) enabledRoles.push("Werwolf", "Werwolf");
@@ -319,18 +415,39 @@ async function startGame(lobbyCode, playersArr, settings) {
   if (settings.Amor !== false) enabledRoles.push("Amor");
   if (settings.Jäger !== false) enabledRoles.push("Jäger");
   if (settings["Kleines Mädchen"] !== false) enabledRoles.push("Kleines Mädchen");
+  
   let rolePool = [...enabledRoles];
   if (rolePool.filter(r => r === "Werwolf").length < 2 && rolePool.includes("Werwolf")) rolePool.push("Werwolf");
-  while (rolePool.length < playersArr.length) rolePool.push("Dorfbewohner");
-  const shuffled = [...playersArr].sort(() => Math.random() - 0.5);
-  const assigned = shuffled.map((p, idx) => ({ ...p, role: rolePool[idx % rolePool.length], isAlive: true }));
+  while (rolePool.length < playersToAssign.length) rolePool.push("Dorfbewohner");
+  
+  const shuffledRoles = [...rolePool].sort(() => Math.random() - 0.5);
+  
+  // Weise Rollen zu und setze den Erzähler auf "Beobachter" (keine Rolle)
+  const assigned = playersArr.map(p => {
+    const assignIdx = playersToAssign.findIndex(pa => pa.id === p.id);
+    if (assignIdx !== -1) {
+      // Spieler bekommt eine Rolle
+      return { ...p, role: shuffledRoles[assignIdx % shuffledRoles.length], isAlive: true };
+    } else {
+      // Erzähler bekommt keine Rolle
+      return { ...p, role: "ERZÄHLER", isAlive: true };
+    }
+  });
+
   const roleDesc = { "Dorfbewohner": "Keine Fähigkeit, aber deine Stimme zählt.", "Werwolf": "Du erwächst in der Nacht und wählst ein Opfer.", "Seherin": "Erkenne die Rolle eines Spielers.", "Hexe": "Heil- und Giftrank – rette oder töte.", "Amor": "Bestimme zwei Liebende in der ersten Nacht.", "Jäger": "Wenn du stirbst, nimm einen anderen mit.", "Kleines Mädchen": "Spioniere mit 50% Risiko." };
-  const myRole = assigned.find(p => p.id === currentUser.id)?.role;
-  if (myRole) showRoleFor10Seconds(myRole, roleDesc[myRole] || "Spiele deine Rolle klug.");
+  const myData = assigned.find(p => p.id === currentUser.id);
+  if (myData && myData.role !== "ERZÄHLER") {
+    showRoleFor10Seconds(myData.role, roleDesc[myData.role] || "Spiele deine Rolle klug.");
+  } else if (myData && myData.role === "ERZÄHLER") {
+    showRoleFor10Seconds("Erzähler", "Du leitest das Spiel. Sorge für eine spannende Atmosphäre!");
+  }
+
   let lovers = [];
   const amor = assigned.find(p => p.role === "Amor");
-  if (amor) { const alive = assigned.filter(p => p.id !== amor.id); if (alive.length >= 2) lovers = [alive[0].id, alive[1].id]; }
+  if (amor) { const alive = assigned.filter(p => p.id !== amor.id && p.role !== "ERZÄHLER"); if (alive.length >= 2) lovers = [alive[0].id, alive[1].id]; }
+  
   const nightOrder = ["WEREWOLF", "SMALL_GIRL", "SEER", "WITCH"];
+  
   await updateDoc(doc(db, "lobbies", lobbyCode), {
     gameStarted: true, phase: "NIGHT", players: assigned,
     actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers, nightVictim: null, hunterRevenge: null, publicVotes: {} },
@@ -339,17 +456,10 @@ async function startGame(lobbyCode, playersArr, settings) {
 }
 
 function renderNarratorDashboard(lobby) {
-  const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData, votes, id, mode } = lobby;
-  let script = "", canNext = false;
-  if (phase === "NIGHT") {
-    const step = nightActionsOrder[currentNightIndex];
-    if (step === "WEREWOLF") script = "🌕 Werwölfe, erwacht! Wählt ein Opfer.";
-    else if (step === "SMALL_GIRL") script = "👧 Kleines Mädchen – willst du spionieren?";
-    else if (step === "SEER") script = "🔮 Seherin, öffne die Augen.";
-    else if (step === "WITCH") script = "🧪 Hexe, der Angriff fiel auf...";
-    canNext = true;
-  } else if (phase === "DAY") { script = "🌞 Tag – Diskutiert! Weiter zur Abstimmung."; canNext = true; }
-  else if (phase === "VOTING") { script = "🗳️ Abstimmung! Jeder wählt."; canNext = true; }
+  const { phase, narratorStep, players, actionData, votes, id } = lobby;
+  const script = getNarratorScript(lobby);
+  let canNext = true; // In der Erzähler-Konsole kann man immer weiter klicken, wenn man menschlich ist.
+  
   let liveVotesHtml = '';
   if (phase === "NIGHT" && narratorStep === "WEREWOLF") {
     const wv = actionData.werewolfVotes || {};
@@ -360,22 +470,29 @@ function renderNarratorDashboard(lobby) {
     const entries = Object.entries(v);
     liveVotesHtml = `<div class="vote-detail-list"><strong>🗳️ Abstimmungsdetails:</strong>${entries.length ? entries.map(([pid, tid]) => `<div class="vote-detail-item"><span>${players.find(p=>p.id===pid)?.name||"?"}</span><span>→ ${players.find(p=>p.id===tid)?.name||"?"}</span></div>`).join('') : '<div>Keine Stimmen</div>'}</div>`;
   }
+
   const nextHandler = async () => {
     if (phase === "NIGHT") await advanceNightPhase(lobby);
     else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
     else if (phase === "VOTING") await resolveVoting(lobby);
   };
+
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-torah"></i> Erzähler-Konsole — ${lobby.code}</h2>
       <div class="narrator-script"><i class="fas fa-microphone-alt"></i> <strong>Skript:</strong><br/>${script}</div>
+      <div style="margin: 1rem 0;"><strong>Rollen-Info (Geheim!):</strong><br/>
+        ${players.map(p => `<span class="player-tag ${p.isAlive ? '' : 'dead'}">${p.name}: ${p.role}</span>`).join(' ')}
+      </div>
       <div><strong>Lebende:</strong> ${players.filter(p=>p.isAlive).map(p=>p.name).join(', ')}</div>
       ${liveVotesHtml}
-      ${canNext ? `<button class="glass-button" id="narratorNext">Weiter</button>` : ''}
-      <button class="glass-button" id="endGame">Spiel beenden</button>
+      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
+        <button class="glass-button" id="narratorNext">Phase weiter</button>
+        <button class="glass-button" id="endGame" style="background:#ef4444;">Spiel beenden</button>
+      </div>
     </div>
   `);
-  if (canNext) document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
+  document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
   document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
@@ -447,68 +564,128 @@ async function resolveVoting(lobby) {
 }
 
 function renderPlayerGameView(lobby, player) {
-  if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Tot</h2><p>Beobachte.</p></div>`);
+  const isHost = (lobby.hostId === currentUser.id);
+  const scriptContent = `<div class="narrator-script" style="margin-bottom:1rem;"><i class="fas fa-volume-up"></i> <strong>Status:</strong><br/>${getNarratorScript(lobby)}</div>`;
+  
+  if (!player.isAlive) {
+    render(`
+      <div class="glass-card">
+        <h2>⚰️ Tot</h2>
+        ${scriptContent}
+        <p>Du bist im Jenseits. Beobachte das Spiel.</p>
+        ${isHost ? `<button class="glass-button" id="endGameHost" style="margin-top:1rem; background:#ef4444;">Spiel beenden</button>` : ''}
+      </div>
+    `);
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+    return;
+  }
+
   const { phase, narratorStep, players } = lobby;
+  
+  // Gemeinsame UI für alle Phasen (Script + eigene Rolle)
+  const baseHeader = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <span class="player-tag" style="background:rgba(124,58,237,0.3); border:1px solid #7c3aed;">Rolle: ${player.role}</span>
+      ${isHost ? `<button class="glass-button-small" id="endGameHost" style="background:#ef4444;">Spiel beenden</button>` : ''}
+    </div>
+    ${scriptContent}
+  `;
+
   if (phase === "NIGHT") {
     const role = player.role;
     if (narratorStep === "WEREWOLF" && role === "Werwolf") {
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
       render(`
-        <div class="glass-card"><h2>🐺 Opfer wählen</h2>
-        <div class="vote-grid" id="wolfTargets">${targets.map(t => `<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
-        <button class="glass-button" id="submitWolfVote">Bestätigen</button></div>
+        <div class="glass-card">
+          ${baseHeader}
+          <h2>🐺 Opfer wählen</h2>
+          <div class="vote-grid" id="wolfTargets">${targets.map(t => `<div class="vote-card" data-id="${t.id}">${t.name} ${t.role==='Werwolf'?'(Kollege)':''}</div>`).join('')}</div>
+          <button class="glass-button" id="submitWolfVote">Bestätigen</button>
+        </div>
       `);
       let selected = null;
       document.querySelectorAll("#wolfTargets .vote-card").forEach(c => c.addEventListener("click", function(){ selected=this.dataset.id; document.querySelectorAll("#wolfTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected"); }));
       document.getElementById("submitWolfVote")?.addEventListener("click", async () => {
-        if(selected){ const cur = lobby.actionData?.werewolfVotes || {}; cur[player.id]=selected; await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.werewolfVotes":cur}); render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`); }
+        if(selected){ const cur = lobby.actionData?.werewolfVotes || {}; cur[player.id]=selected; await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.werewolfVotes":cur}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); }
       });
+      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
       return;
     }
     if (narratorStep === "SMALL_GIRL" && role === "Kleines Mädchen") {
-      render(`<div class="glass-card"><h2>👧 Spionieren?</h2><button class="glass-button" id="peekYes">Ja (50% Risiko)</button><button class="glass-button" id="peekNo">Nein</button></div>`);
+      render(`
+        <div class="glass-card">
+          ${baseHeader}
+          <h2>👧 Spionieren?</h2>
+          <button class="glass-button" id="peekYes">Ja (50% Risiko)</button>
+          <button class="glass-button" id="peekNo">Nein</button>
+        </div>
+      `);
       document.getElementById("peekYes")?.addEventListener("click", async () => {
         const risk = Math.random()<0.5;
         alert(risk?"Entdeckt und stirbst!":"Werwölfe: "+players.filter(p=>p.role==="Werwolf"&&p.isAlive).map(p=>p.name).join(", "));
         if(risk){ const updated = players.map(p=>p.id===player.id?{...p,isAlive:false}:p); await updateDoc(doc(db,"lobbies",lobby.id),{players:updated,"actionData.smallGirlPeeked":true}); }
         else await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true});
       });
-      document.getElementById("peekNo")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true}); render(`<div class="glass-card"><p>Sicher versteckt.</p></div>`); });
+      document.getElementById("peekNo")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true}); render(`<div class="glass-card">${baseHeader}<p>Sicher versteckt.</p></div>`); });
+      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
       return;
     }
     if (narratorStep === "SEER" && role === "Seherin") {
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
-      render(`<div class="glass-card"><h2>🔮 Wähle Spieler</h2><div class="vote-grid" id="seerTargets">${targets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div><button class="glass-button" id="seerSubmit">Erkennen</button></div>`);
+      render(`
+        <div class="glass-card">
+          ${baseHeader}
+          <h2>🔮 Wähle Spieler</h2>
+          <div class="vote-grid" id="seerTargets">${targets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
+          <button class="glass-button" id="seerSubmit">Erkennen</button>
+        </div>
+      `);
       let selected = null;
       document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
       document.getElementById("seerSubmit")?.addEventListener("click", async () => { const target=players.find(p=>p.id===selected); alert(`Rolle von ${target.name}: ${target.role}`); await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.seerTarget":selected}); });
+      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
       return;
     }
     if (narratorStep === "WITCH" && role === "Hexe") {
       const victimId = lobby.actionData?.nightVictim;
       const victimName = players.find(p=>p.id===victimId)?.name||"niemand";
-      render(`<div class="glass-card"><h2>🧪 Hexe – ${victimName} angegriffen</h2><button class="glass-button" id="healBtn">💚 Heilen</button><button class="glass-button" id="poisonBtn">☠️ Vergiften</button><button class="glass-button" id="skipWitch">Nichts</button></div>`);
+      render(`
+        <div class="glass-card">
+          ${baseHeader}
+          <h2>🧪 Hexe – ${victimName} angegriffen</h2>
+          <button class="glass-button" id="healBtn">💚 Heilen</button>
+          <button class="glass-button" id="poisonBtn">☠️ Vergiften</button>
+          <button class="glass-button" id="skipWitch">Nichts</button>
+        </div>
+      `);
       document.getElementById("healBtn")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.healTarget":victimId,"actionData.witch.usedHeal":true}); alert("Geheilt!"); });
-      document.getElementById("poisonBtn")?.addEventListener("click", async () => { const aliveOthers=players.filter(p=>p.isAlive&&p.id!==player.id); const name=prompt(`Vergiften: ${aliveOthers.map(p=>p.name).join(", ")}`); const target=aliveOthers.find(p=>p.name===name); if(target){ await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.poisonTarget":target.id,"actionData.witch.usedPoison":true}); alert(`Vergiftet: ${target.name}`); } });
+      document.getElementById("poisonBtn")?.addEventListener("click", async () => { const aliveOthers=players.filter(p=>p.isAlive&&p.id !== player.id); const name=prompt(`Vergiften: ${aliveOthers.map(p=>p.name).join(", ")}`); const target=aliveOthers.find(p=>p.name===name); if(target){ await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.poisonTarget":target.id,"actionData.witch.usedPoison":true}); alert(`Vergiftet: ${target.name}`); } });
       document.getElementById("skipWitch")?.addEventListener("click", () => alert("Nichts getan."));
+      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
       return;
     }
-    render(`<div class="glass-card"><p>🌙 Nacht – warte.</p></div>`);
+    render(`<div class="glass-card">${baseHeader}<p>🌙 Nacht – warte.</p></div>`);
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
     return;
   }
   if (phase === "VOTING") {
     const aliveTargets = players.filter(p => p.isAlive && p.id !== player.id);
     render(`
-      <div class="glass-card"><h2>🗳️ Wen hinrichten?</h2>
-      <div class="vote-grid" id="voteGrid">${aliveTargets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
-      <button class="glass-button" id="castVote">Abstimmen</button></div>
+      <div class="glass-card">
+        ${baseHeader}
+        <h2>🗳️ Wen hinrichten?</h2>
+        <div class="vote-grid" id="voteGrid">${aliveTargets.map(t=>`<div class="vote-card" data-id="${t.id}">${t.name}</div>`).join('')}</div>
+        <button class="glass-button" id="castVote">Abstimmen</button>
+      </div>
     `);
     let selected = null;
     document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
-    document.getElementById("castVote")?.addEventListener("click", async () => { if(selected){ const newVotes={...(lobby.votes||{}),[player.id]:selected}; await updateDoc(doc(db,"lobbies",lobby.id),{votes:newVotes}); render(`<div class="glass-card"><p>✅ Abgestimmt.</p></div>`); } });
+    document.getElementById("castVote")?.addEventListener("click", async () => { if(selected){ const newVotes={...(lobby.votes||{}),[player.id]:selected}; await updateDoc(doc(db,"lobbies",lobby.id),{votes:newVotes}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); } });
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
     return;
   }
-  render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Erzähler leitet.</p></div>`);
+  render(`<div class="glass-card">${baseHeader}<h2>🌞 Tagphase</h2><p>Diskutiert in der Gruppe.</p></div>`);
+  document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
 function renderMainMenu() {
