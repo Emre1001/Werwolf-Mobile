@@ -1,4 +1,4 @@
-/* style.css – Werwolf Mobile | Einheitliches Layout, Animationen */
+/* style.css – Werwolf Mobile | Einheitliches Layout, Animationen, Consent-Banner */
 * {
   margin: 0;
   padding: 0;
@@ -370,6 +370,25 @@ input:checked + .slider:before {
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
+/* Consent-Banner (unten fixiert) */
+.consent-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  padding: 1rem;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(20px);
+  display: flex;
+  justify-content: center;
+}
+.consent-banner-content {
+  max-width: 700px;
+  width: 100%;
+  padding: 1.5rem;
+}
+
 /* Responsive */
 @media (max-width: 760px) {
   .glass-card { padding: 1.2rem; }
@@ -377,4 +396,5 @@ input:checked + .slider:before {
   .icon-button i { font-size: 1.8rem; }
   .icon-button span { font-size: 0.8rem; }
   .roles-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .consent-banner-content { padding: 1rem; }
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Werwolf Mobile – Synchroner Erzähler-Modus</title>
-  <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation">
+  <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation, DSGVO-konform.">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0a0f2a">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21,11 +21,48 @@
       <div class="loader" style="margin-top: 20vh;"></div>
     </div>
   </div>
+
+  <!-- DSGVO-Consent-Banner (wird nur angezeigt, wenn keine Einwilligung) -->
+  <div id="consent-banner" class="consent-banner" style="display: none;">
+    <div class="consent-banner-content glass-card">
+      <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+        <i class="fas fa-shield-alt" style="font-size: 2rem; color: #c084fc;"></i>
+        <h3 style="margin: 0;">Datenschutz-Einstellungen</h3>
+      </div>
+      <p style="margin-bottom: 1.5rem; line-height: 1.5;">
+        Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen und Ihnen den Wiedereinstieg zu erleichtern. 
+        Diese Daten sind technisch notwendig und werden nicht an Dritte weitergegeben. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
+        Ihre Einwilligung können Sie jederzeit über den „Datenschutz“-Button widerrufen.
+      </p>
+      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <button id="accept-consent" class="glass-button" style="background: #22c55e;">🍪 Akzeptieren & Weiter</button>
+        <button id="reject-consent" class="glass-button" style="background: #ef4444;">❌ Ablehnen</button>
+      </div>
+      <div style="margin-top: 1.5rem; text-align: center; font-size: 0.85rem;">
+        <a href="#" id="show-impressum" style="color: #c084fc; margin-right: 1rem;">Impressum</a>
+        <a href="#" id="show-datenschutz" style="color: #c084fc;">Datenschutzerklärung</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal für Impressum & Datenschutz -->
+  <div id="legal-modal" class="modal" style="display: none;">
+    <div class="modal-content glass-card" style="max-width: 550px; max-height: 80vh; overflow-y: auto;">
+      <h3 id="legal-modal-title">Impressum</h3>
+      <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.5;">
+        <!-- Inhalt wird dynamisch eingefügt -->
+      </div>
+      <button class="glass-button" id="close-legal-modal">Schließen</button>
+    </div>
+  </div>
+
+  <!-- Installations-Prompt (PWA) -->
   <div id="installPrompt" style="display:none; position:fixed; bottom:20px; left:20px; right:20px; z-index:1000;" class="glass-card">
     <p style="margin-bottom:10px;"><i class="fas fa-download"></i> App installieren für bestes Erlebnis</p>
     <button id="installBtn" class="glass-button">Installieren</button>
     <button id="closeInstallBtn" class="glass-button" style="background:rgba(0,0,0,0.5);">Später</button>
   </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

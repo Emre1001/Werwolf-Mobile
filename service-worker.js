@@ -1,4 +1,4 @@
-const CACHE_NAME = "werwolf-pwa-v3";
+const CACHE_NAME = "werwolf-pwa-v4";
 const urls = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json"];
 
 self.addEventListener("install", event => {

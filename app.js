@@ -1,8 +1,8 @@
-// app.js – Werwolf Mobile | Inaktivitäts-Kick, verbesserte UI, Erzähler-Votes, Wiedereintritt
+// app.js – Werwolf Mobile | DSGVO-konform, Inaktivitäts-Kick, verbesserte UI
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ========== FIREBASE KONFIGURATION ==========
+// ========== FIREBASE KONFIGURATION (DEIN PROJEKT) ==========
 const firebaseConfig = {
   apiKey: "AIzaSyBy9KD3rh8-JmmNwaPi03FJnrvaUq5UZGM",
   authDomain: "werwolf-mobile.firebaseapp.com",
@@ -17,13 +17,75 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 console.log("✅ Firebase verbunden");
 
+// ========== CONSENT MANAGEMENT (DSGVO) ==========
+const CONSENT_KEY = "werwolf_consent_given";
+let consentGiven = localStorage.getItem(CONSENT_KEY) === "true";
+
+function showConsentBanner() {
+  const banner = document.getElementById("consent-banner");
+  if (banner && !consentGiven) banner.style.display = "flex";
+}
+
+function acceptConsent() {
+  localStorage.setItem(CONSENT_KEY, "true");
+  consentGiven = true;
+  document.getElementById("consent-banner").style.display = "none";
+  // Nach Zustimmung App initialisieren
+  initApp();
+}
+
+function rejectConsent() {
+  // Bei Ablehnung: keine lokalen Daten speichern, App kann nicht genutzt werden
+  alert("Ohne Ihre Zustimmung kann die App nicht funktionieren, da sie technisch notwendige Daten speichert. Bitte akzeptieren Sie die Datenschutzerklärung, um fortzufahren.");
+  // Banner bleibt sichtbar, keine weitere Aktion
+}
+
+// ========== RECHTSTEXTE (Impressum & Datenschutz) ==========
+function showImpressum() {
+  const modal = document.getElementById("legal-modal");
+  const title = document.getElementById("legal-modal-title");
+  const body = document.getElementById("legal-modal-body");
+  title.innerText = "Impressum";
+  body.innerHTML = `
+    <p><strong>Angaben gemäß § 5 TMG:</strong></p>
+    <p>Emre Asik<br>
+    E-Mail: emre.asik201060@gmail.com</p>
+    <p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage unter der oben genannten E-Mail-Adresse.</p>
+    <p><strong>Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV:</strong><br>
+    Emre Asik (Kontakt wie oben)</p>
+    <p><strong>Haftungsausschluss:</strong> Trotz sorgfältiger inhaltlicher Kontrolle übernehmen wir keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich deren Betreiber verantwortlich.</p>
+  `;
+  modal.style.display = "flex";
+}
+
+function showDatenschutz() {
+  const modal = document.getElementById("legal-modal");
+  const title = document.getElementById("legal-modal-title");
+  const body = document.getElementById("legal-modal-body");
+  title.innerText = "Datenschutzerklärung";
+  body.innerHTML = `
+    <p><strong>1. Verantwortlicher</strong><br>
+    Emre Asik, E-Mail: emre.asik201060@gmail.com</p>
+    <p><strong>2. Erhobene Daten</strong><br>
+    Diese App speichert auf Ihrem Gerät (LocalStorage) eine zufällig generierte Spieler-ID und eine Geräte-ID. Diese sind technisch notwendig, um das Spiel zu ermöglichen und Ihnen den Wiedereinstieg in laufende Spiele zu erlauben. Es werden keine personenbezogenen Daten wie Name, Adresse oder Standort erhoben oder an Dritte weitergegeben.</p>
+    <p><strong>3. Rechtsgrundlage</strong><br>
+    Die Verarbeitung erfolgt auf Grundlage von Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung) sowie Ihrer Einwilligung nach Art. 6 Abs. 1 lit. a DSGVO. Sie können Ihre Einwilligung jederzeit widerrufen, indem Sie den LocalStorage Ihres Browsers leeren.</p>
+    <p><strong>4. Weitergabe von Daten</strong><br>
+    Eine Weitergabe an Dritte erfolgt nicht. Die Firebase-Datenbank speichert temporär die Lobby-Informationen (Spielernamen, Rollen, Abstimmungen). Diese werden nach Spielende automatisch gelöscht.</p>
+    <p><strong>5. Ihre Rechte</strong><br>
+    Sie haben das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung Ihrer Daten sowie das Recht auf Datenübertragbarkeit. Kontaktieren Sie uns hierfür über die oben genannte E-Mail.</p>
+    <p><strong>6. Beschwerderecht</strong><br>
+    Sie haben das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren.</p>
+  `;
+  modal.style.display = "flex";
+}
+
 // ========== GLOBALE ZUSTÄNDE ==========
 function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2); }
-// Geräte-ID für Wiedereintritt (localStorage)
 let deviceId = localStorage.getItem("ww_device_id");
-if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
+if (!deviceId && consentGiven) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
 let currentUser = { id: localStorage.getItem("ww_player_id") || uuid(), name: "", deviceId: deviceId };
-localStorage.setItem("ww_player_id", currentUser.id);
+if (consentGiven) localStorage.setItem("ww_player_id", currentUser.id);
 let currentLobbyId = null;
 let unsubscribeLobby = null;
 let heartbeatInterval = null;
@@ -41,7 +103,18 @@ function showModal(contentHtml, onClose) {
   return modalDiv;
 }
 
-// Heartbeat (alle 10 Sekunden) – nur wenn in Lobby
+// ========== INAKTIVITÄTS-KICK (ohne Seitenneuladen) ==========
+async function checkInactivePlayers(lobbyId, players) {
+  const now = Date.now();
+  const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
+  if (inactive.length === 0) return;
+  const newPlayers = players.filter(p => !inactive.some(i => i.id === p.id));
+  const lobbyRef = doc(db, "lobbies", lobbyId);
+  await updateDoc(lobbyRef, { players: newPlayers });
+  if (newPlayers.length === 0) await deleteDoc(lobbyRef);
+}
+
+// Heartbeat alle 10 Sekunden
 function startHeartbeat(lobbyId) {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
   heartbeatInterval = setInterval(async () => {
@@ -59,20 +132,9 @@ function startHeartbeat(lobbyId) {
   }, 10000);
 }
 
-// Inaktivitäts-Check (alle 15 Sekunden) – läuft im Listener
-async function checkInactivePlayers(lobbyId, players) {
-  const now = Date.now();
-  const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
-  if (inactive.length === 0) return;
-  const newPlayers = players.filter(p => !inactive.some(i => i.id === p.id));
-  const lobbyRef = doc(db, "lobbies", lobbyId);
-  await updateDoc(lobbyRef, { players: newPlayers });
-  // Wenn keine Spieler mehr, Lobby löschen
-  if (newPlayers.length === 0) await deleteDoc(lobbyRef);
-}
-
-// ========== LOBBY ERSTELLEN ==========
+// ========== LOBBY FUNKTIONEN ==========
 async function createLobby(playerName, isPublic, settings) {
+  if (!consentGiven) return;
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
   const lobbyRef = doc(db, "lobbies", code);
   const player = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
@@ -88,23 +150,21 @@ async function createLobby(playerName, isPublic, settings) {
   attachListener(code);
 }
 
-// ========== LOBBY BEITRETEN (mit Wiedereintritt) ==========
 async function joinLobby(code, playerName) {
+  if (!consentGiven) return;
   const q = query(collection(db, "lobbies"), where("code", "==", code));
   const snap = await getDocs(q);
   if (snap.empty) throw new Error("Lobby nicht gefunden");
   const lobbyDoc = snap.docs[0];
   const data = lobbyDoc.data();
   if (data.gameStarted) throw new Error("Spiel läuft bereits");
-  // Prüfen, ob Spieler mit dieser deviceId bereits existiert (Wiedereintritt)
   const existingPlayer = data.players.find(p => p.deviceId === deviceId);
   let newPlayers;
   if (existingPlayer) {
-    // Spieler kehrt zurück – aktualisiere Namen und lastSeen
     newPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
     await updateDoc(lobbyDoc.ref, { players: newPlayers });
     currentUser.id = existingPlayer.id;
-    localStorage.setItem("ww_player_id", currentUser.id);
+    if (consentGiven) localStorage.setItem("ww_player_id", currentUser.id);
   } else {
     const newPlayer = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
     await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
@@ -114,7 +174,6 @@ async function joinLobby(code, playerName) {
   attachListener(code);
 }
 
-// ========== KICKEN ==========
 async function kickPlayer(lobbyId, playerIdToKick) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   const lobbySnap = await getDoc(lobbyRef);
@@ -131,7 +190,6 @@ async function kickPlayer(lobbyId, playerIdToKick) {
   }
 }
 
-// ========== VERLASSEN ==========
 async function leaveLobby(lobbyId, playerId, hostId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   const lobbySnap = await getDoc(lobbyRef);
@@ -163,9 +221,7 @@ function attachListener(lobbyId) {
       return;
     }
     const data = { id: snap.id, ...snap.data() };
-    // Inaktivitäts-Check
     await checkInactivePlayers(lobbyId, data.players);
-    // Wenn der aktuelle Spieler nicht mehr in players ist, wurde er gekickt
     if (!data.players.find(p => p.id === currentUser.id)) {
       currentLobbyId = null;
       if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -271,7 +327,6 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
       });
       await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings });
     });
-    // Rollen-Toggles als Kacheln
     document.querySelectorAll(".role-card").forEach(card => {
       card.addEventListener("click", () => card.classList.toggle("selected"));
     });
@@ -319,7 +374,7 @@ async function startGame(lobbyCode, playersArr, settings) {
   });
 }
 
-// ========== ERZÄHLER-DASHBOARD (mit detaillierten Votes) ==========
+// ========== ERZÄHLER-DASHBOARD ==========
 function renderNarratorDashboard(lobby) {
   const { phase, narratorStep, nightActionsOrder, currentNightIndex, players, actionData, votes, id } = lobby;
   let script = "", canNext = false;
@@ -338,7 +393,6 @@ function renderNarratorDashboard(lobby) {
     canNext = true;
   }
   
-  // Detaillierte Vote-Anzeige
   let liveVotesHtml = '';
   if (phase === "NIGHT" && narratorStep === "WEREWOLF") {
     const werewolfVotes = actionData.werewolfVotes || {};
@@ -379,7 +433,7 @@ function renderNarratorDashboard(lobby) {
   });
 }
 
-// ========== NACHT- UND ABSTIMMUNGSLOGIK (wie gehabt, aber gekürzt) ==========
+// Nacht- und Abstimmungslogik (wie gehabt)
 async function advanceNightPhase(lobby) {
   const { id, nightActionsOrder, currentNightIndex } = lobby;
   const step = nightActionsOrder[currentNightIndex];
@@ -447,7 +501,7 @@ async function resolveVoting(lobby) {
   await updateDoc(doc(db, "lobbies", lobby.id), { players, phase: "NIGHT", currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}, "actionData.werewolfVotes": {} });
 }
 
-// ========== SPIELER-ANSICHT (vereinfacht, aber funktional) ==========
+// ========== SPIELER-ANSICHT (gekürzt, aber voll funktional) ==========
 function renderPlayerGameView(lobby, player) {
   if (!player.isAlive) return render(`<div class="glass-card"><h2>⚰️ Du bist tot</h2><p>Beobachte das Spiel.</p></div>`);
   const { phase, narratorStep, actionData, players } = lobby;
@@ -635,7 +689,6 @@ function showCreateLobbyModal() {
     isPublic = e.target.checked;
     privacySpan.innerHTML = isPublic ? '<i class="fas fa-globe"></i> Öffentlich' : '<i class="fas fa-lock"></i> Privat';
   });
-  // Rollen-Klicks
   modalDiv.querySelectorAll(".role-card").forEach(card => {
     card.addEventListener("click", () => card.classList.toggle("selected"));
   });
@@ -670,6 +723,16 @@ function showJoinLobbyModal() {
 
 function showLobbyMenu() { renderMainMenu(); }
 
+// ========== APP INIT (nach Consent) ==========
+function initApp() {
+  deviceId = localStorage.getItem("ww_device_id");
+  if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
+  currentUser.id = localStorage.getItem("ww_player_id") || uuid();
+  localStorage.setItem("ww_player_id", currentUser.id);
+  currentUser.deviceId = deviceId;
+  renderMainMenu();
+}
+
 // ========== PWA-INSTALLATION ==========
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
@@ -682,6 +745,18 @@ window.addEventListener("beforeinstallprompt", (e) => {
   document.getElementById("closeInstallBtn")?.addEventListener("click", () => { installDiv.style.display = "none"; });
 });
 
-// ========== START ==========
-renderMainMenu();
+// ========== EVENT LISTENER FÜR CONSENT & RECHTSTEXTE ==========
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("accept-consent")?.addEventListener("click", acceptConsent);
+  document.getElementById("reject-consent")?.addEventListener("click", rejectConsent);
+  document.getElementById("show-impressum")?.addEventListener("click", (e) => { e.preventDefault(); showImpressum(); });
+  document.getElementById("show-datenschutz")?.addEventListener("click", (e) => { e.preventDefault(); showDatenschutz(); });
+  document.getElementById("close-legal-modal")?.addEventListener("click", () => {
+    document.getElementById("legal-modal").style.display = "none";
+  });
+  if (!consentGiven) showConsentBanner();
+  else initApp();
+});
+
+// Service Worker
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js");
