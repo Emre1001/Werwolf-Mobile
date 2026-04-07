@@ -314,13 +314,13 @@ function getNarratorScript(lobby) {
 
 function renderHostOnlyGameView(lobby) {
   render(`
-    <div class="glass-card">
-      <h2><i class="fas fa-crown"></i> Host-Konsole (Eingeschränkt)</h2>
-      <div class="narrator-script"><i class="fas fa-info-circle"></i> <strong>Status:</strong><br/>${getNarratorScript(lobby)}</div>
-      <p>Du bist nur der Host. Der Erzähler leitet das Spiel.</p>
-      <button class="glass-button" id="endGame">Spiel beenden</button>
+      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
+        <button class="glass-button" id="leaveLobbyBtn">Verlassen</button>
+        <button class="glass-button" id="endGame" style="background:#ef4444;">Spiel beenden</button>
+      </div>
     </div>
   `);
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
   document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
@@ -509,11 +509,13 @@ function renderNarratorDashboard(lobby) {
       ${liveVotesHtml}
       <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
         <button class="glass-button" id="narratorNext">Phase weiter</button>
+        <button class="glass-button" id="leaveLobbyBtn">Verlassen</button>
         <button class="glass-button" id="endGame" style="background:#ef4444;">Spiel beenden</button>
       </div>
     </div>
   `);
   document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id, lobby.hostId));
   document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
@@ -594,9 +596,13 @@ function renderPlayerGameView(lobby, player) {
         <h2>⚰️ Tot</h2>
         ${scriptContent}
         <p>Du bist im Jenseits. Beobachte das Spiel.</p>
-        ${isHost ? `<button class="glass-button" id="endGameHost" style="margin-top:1rem; background:#ef4444;">Spiel beenden</button>` : ''}
+        <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
+          <button class="glass-button" id="leaveLobbyBtn">Verlassen</button>
+          ${isHost ? `<button class="glass-button" id="endGameHost" style="background:#ef4444;">Spiel beenden</button>` : ''}
+        </div>
       </div>
     `);
+    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
     document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
     return;
   }
@@ -607,10 +613,18 @@ function renderPlayerGameView(lobby, player) {
   const baseHeader = `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
       <span class="player-tag" style="background:rgba(124,58,237,0.3); border:1px solid #7c3aed;">Rolle: ${player.role}</span>
-      ${isHost ? `<button class="glass-button-small" id="endGameHost" style="background:#ef4444;">Spiel beenden</button>` : ''}
+      <div style="display:flex; gap:0.5rem;">
+        <button class="glass-button-small" id="leaveLobbyBtn">Verlassen</button>
+        ${isHost ? `<button class="glass-button-small" id="endGameHost" style="background:#ef4444;">Beenden</button>` : ''}
+      </div>
     </div>
     ${scriptContent}
   `;
+
+  const attachBaseListeners = () => {
+    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+  };
 
   if (phase === "NIGHT") {
     const role = player.role;
@@ -627,9 +641,9 @@ function renderPlayerGameView(lobby, player) {
       let selected = null;
       document.querySelectorAll("#wolfTargets .vote-card").forEach(c => c.addEventListener("click", function(){ selected=this.dataset.id; document.querySelectorAll("#wolfTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected"); }));
       document.getElementById("submitWolfVote")?.addEventListener("click", async () => {
-        if(selected){ const cur = lobby.actionData?.werewolfVotes || {}; cur[player.id]=selected; await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.werewolfVotes":cur}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); }
+        if(selected){ const cur = lobby.actionData?.werewolfVotes || {}; cur[player.id]=selected; await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.werewolfVotes":cur}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); attachBaseListeners(); }
       });
-      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+      attachBaseListeners();
       return;
     }
     if (narratorStep === "SMALL_GIRL" && role === "Kleines Mädchen") {
@@ -647,8 +661,8 @@ function renderPlayerGameView(lobby, player) {
         if(risk){ const updated = players.map(p=>p.id===player.id?{...p,isAlive:false}:p); await updateDoc(doc(db,"lobbies",lobby.id),{players:updated,"actionData.smallGirlPeeked":true}); }
         else await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true});
       });
-      document.getElementById("peekNo")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true}); render(`<div class="glass-card">${baseHeader}<p>Sicher versteckt.</p></div>`); });
-      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+      document.getElementById("peekNo")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.smallGirlPeeked":true}); render(`<div class="glass-card">${baseHeader}<p>Sicher versteckt.</p></div>`); attachBaseListeners(); });
+      attachBaseListeners();
       return;
     }
     if (narratorStep === "SEER" && role === "Seherin") {
@@ -664,7 +678,7 @@ function renderPlayerGameView(lobby, player) {
       let selected = null;
       document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#seerTargets .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
       document.getElementById("seerSubmit")?.addEventListener("click", async () => { const target=players.find(p=>p.id===selected); alert(`Rolle von ${target.name}: ${target.role}`); await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.seerTarget":selected}); });
-      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+      attachBaseListeners();
       return;
     }
     if (narratorStep === "WITCH" && role === "Hexe") {
@@ -682,11 +696,11 @@ function renderPlayerGameView(lobby, player) {
       document.getElementById("healBtn")?.addEventListener("click", async () => { await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.healTarget":victimId,"actionData.witch.usedHeal":true}); alert("Geheilt!"); });
       document.getElementById("poisonBtn")?.addEventListener("click", async () => { const aliveOthers=players.filter(p=>p.isAlive&&p.id !== player.id); const name=prompt(`Vergiften: ${aliveOthers.map(p=>p.name).join(", ")}`); const target=aliveOthers.find(p=>p.name===name); if(target){ await updateDoc(doc(db,"lobbies",lobby.id),{"actionData.witch.poisonTarget":target.id,"actionData.witch.usedPoison":true}); alert(`Vergiftet: ${target.name}`); } });
       document.getElementById("skipWitch")?.addEventListener("click", () => alert("Nichts getan."));
-      document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+      attachBaseListeners();
       return;
     }
     render(`<div class="glass-card">${baseHeader}<p>🌙 Nacht – warte.</p></div>`);
-    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+    attachBaseListeners();
     return;
   }
   if (phase === "VOTING") {
@@ -701,12 +715,12 @@ function renderPlayerGameView(lobby, player) {
     `);
     let selected = null;
     document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.addEventListener("click",function(){selected=this.dataset.id; document.querySelectorAll("#voteGrid .vote-card").forEach(c=>c.classList.remove("selected")); this.classList.add("selected");}));
-    document.getElementById("castVote")?.addEventListener("click", async () => { if(selected){ const newVotes={...(lobby.votes||{}),[player.id]:selected}; await updateDoc(doc(db,"lobbies",lobby.id),{votes:newVotes}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); } });
-    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+    document.getElementById("castVote")?.addEventListener("click", async () => { if(selected){ const newVotes={...(lobby.votes||{}),[player.id]:selected}; await updateDoc(doc(db,"lobbies",lobby.id),{votes:newVotes}); render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt.</p></div>`); attachBaseListeners(); } });
+    attachBaseListeners();
     return;
   }
   render(`<div class="glass-card">${baseHeader}<h2>🌞 Tagphase</h2><p>Diskutiert in der Gruppe.</p></div>`);
-  document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+  attachBaseListeners();
 }
 
 function renderMainMenu() {
