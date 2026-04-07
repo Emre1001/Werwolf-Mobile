@@ -99,7 +99,7 @@ function startHeartbeat(lobbyId) {
     if (idx !== -1) {
       const updated = [...lobby.players];
       updated[idx] = { ...updated[idx], lastSeen: Date.now() };
-      await updateDoc(lobbyRef, { players: updated });
+      await updateDoc(lobbyRef, { players: updated, lastUpdate: Date.now() });
     }
   }, 10000);
 }
@@ -130,6 +130,13 @@ async function joinLobby(code, playerName) {
   if (snap.empty) throw new Error("Lobby nicht gefunden");
   const lobbyDoc = snap.docs[0];
   const data = lobbyDoc.data();
+  
+  // Stale-Check: Wenn die Lobby seit 5 Min nicht aktualisiert wurde, löschen wir sie
+  if (data.lastUpdate && (Date.now() - data.lastUpdate > 5 * 60 * 1000)) {
+    await deleteDoc(lobbyDoc.ref);
+    throw new Error("Lobby abgelaufen.");
+  }
+
   if (data.gameStarted) throw new Error("Spiel läuft bereits");
   const existing = data.players.find(p => p.deviceId === deviceId);
   if (existing) {
@@ -144,6 +151,18 @@ async function joinLobby(code, playerName) {
   currentLobbyId = code;
   startHeartbeat(code);
   attachListener(code);
+}
+
+// Hilfsfunktion zum Aufräumen veralteter Lobbys
+async function cleanupStaleLobbies(lobbies) {
+  const now = Date.now();
+  const timeout = 5 * 60 * 1000; // 5 Minuten Inaktivität
+  for (const lobby of lobbies) {
+    if (lobby.lastUpdate && (now - lobby.lastUpdate > timeout)) {
+      console.log(`Lobby ${lobby.code} ist veraltet und wird gelöscht.`);
+      await deleteDoc(doc(db, "lobbies", lobby.code));
+    }
+  }
 }
 
 async function kickPlayer(lobbyId, playerIdToKick) {
@@ -724,10 +743,16 @@ async function refreshLobbyList() {
   const q = query(collection(db, "lobbies"), where("gameStarted", "==", false), where("isPublic", "==", true));
   const snap = await getDocs(q);
   const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
+  
+  // Automatisches Aufräumen beim Laden der Liste
+  await cleanupStaleLobbies(lobbies);
+  
   const listDiv = document.getElementById("lobbyList");
   if(listDiv){
-    if(lobbies.length===0) listDiv.innerHTML='<p>Keine öffentlichen Lobbys.</p>';
-    else listDiv.innerHTML=`<h3>Öffentliche Lobbys</h3><div class="player-list">${lobbies.map(l=>`<div class="player-tag">${l.code} (${l.players.length}) <button class="glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
+    // Erneutes Abfragen nach dem Aufräumen für die Anzeige
+    const activeLobbies = lobbies.filter(l => (Date.now() - (l.lastUpdate || 0)) < 5 * 60 * 1000);
+    if(activeLobbies.length===0) listDiv.innerHTML='<p>Keine öffentlichen Lobbys.</p>';
+    else listDiv.innerHTML=`<h3>Öffentliche Lobbys</h3><div class="player-list">${activeLobbies.map(l=>`<div class="player-tag">${l.code} (${l.players.length}) <button class="glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
     document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) alert("Name eingeben"); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
   }
 }
@@ -805,6 +830,18 @@ document.addEventListener("DOMContentLoaded", () => {
   if(!consentGiven) showConsentModal();
   else initApp();
 });
+
+// Automatischer "Leave", wenn der Tab geschlossen wird
+window.addEventListener("beforeunload", () => {
+  if (currentLobbyId && currentUser.id) {
+    // Da asynchrones Löschen beim Beenden unzuverlässig ist, versuchen wir es zumindest.
+    const lobbyRef = doc(db, "lobbies", currentLobbyId);
+    // Hier nutzen wir kein await, da der Tab sofort schließt.
+    // In einer idealen Welt würde man hier navigator.sendBeacon oder eine Cloud Function nutzen.
+    leaveLobby(currentLobbyId, currentUser.id, null);
+  }
+});
+
 function initApp() {
   if(!firebaseReady){ alert("Firebase nicht erreichbar"); return; }
   if(!navigator.onLine){ showOfflineModal(); return; }
