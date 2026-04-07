@@ -1,4 +1,4 @@
-// app.js – Werwolf Mobile | Optimiert, keine Reloads, korrekte Anzeige
+// app.js – Werwolf Mobile | Kein automatischer Start, min. 4 Spieler
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -120,7 +120,7 @@ async function createLobby(playerName, isPublic, mode, settings) {
   currentLobbyId = code;
   startHeartbeat(code);
   attachListener(code);
-  if (isAutoNarrator) setTimeout(() => startGame(code, [player], settings), 3000);
+  // KEIN AUTOMATISCHER START MEHR
 }
 
 async function joinLobby(code, playerName) {
@@ -221,8 +221,13 @@ function renderByState(lobby) {
 function renderLobbyView(lobby, isHost, currentPlayer) {
   const players = lobby.players;
   const playerCount = players.length;
-  const minPlayers = 4;
-  const canStart = (lobby.mode === "online") ? (playerCount >= 2) : (playerCount >= minPlayers && lobby.confirmedNarratorId !== null);
+  const MIN_PLAYERS = 4;
+  let canStart = false;
+  if (lobby.mode === "online") {
+    canStart = (playerCount >= MIN_PLAYERS);
+  } else {
+    canStart = (playerCount >= MIN_PLAYERS && lobby.confirmedNarratorId !== null);
+  }
   const volunteerId = lobby.volunteerNarratorId;
   const confirmedId = lobby.confirmedNarratorId;
   const alreadyVolunteered = (volunteerId === currentUser.id);
@@ -265,16 +270,20 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
     </div>
   `).join('');
   const startDisabled = !canStart;
-  const startHint = !canStart ? (lobby.mode === "online" ? "Mindestens 2 Spieler benötigt" : `Mindestens ${minPlayers} Spieler und ein bestätigter Erzähler benötigt`) : "";
+  let startHint = "";
+  if (!canStart) {
+    if (playerCount < MIN_PLAYERS) startHint = `${MIN_PLAYERS} Spieler benötigt (aktuell ${playerCount})`;
+    else if (lobby.mode !== "online" && lobby.confirmedNarratorId === null) startHint = "Erzähler muss bestätigt werden";
+  }
   render(`
     <div class="glass-card">
       <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span> <span style="margin-left:0.5rem;">${lobby.mode === 'online' ? '🌐 Online-Modus' : '🏠 Lokal-Modus'}</span></h2>
       <div class="player-list">${playersHtml}</div>
-      <div>👥 ${playerCount} Spieler ${playerCount < minPlayers && lobby.mode !== "online" ? `(mind. ${minPlayers} für Start)` : ""}</div>
+      <div>👥 ${playerCount} / ${MIN_PLAYERS}+ Spieler</div>
       <div>${volunteerSection}</div>
       ${hostControls}
-      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
-        ${isHost ? `<button class="glass-button" id="startGameBtn" ${startDisabled ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten</button>${startHint ? `<span style="font-size:0.8rem; margin-left:0.5rem;">${startHint}</span>` : ''}` : ''}
+      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:center;">
+        ${isHost ? `<button class="glass-button" id="startGameBtn" ${startDisabled ? 'disabled style="opacity:0.5;"' : ''}>Spiel starten</button>${startHint ? `<span style="font-size:0.8rem;">${startHint}</span>` : ''}` : ''}
         <button class="glass-button" id="leaveLobbyBtn">Verlassen</button>
       </div>
     </div>
@@ -297,6 +306,11 @@ function renderRoleToggles(settings) {
 }
 
 async function startGame(lobbyCode, playersArr, settings) {
+  // Prüfe nochmal Mindestanzahl
+  if (playersArr.length < 4) {
+    alert("Es werden mindestens 4 Spieler benötigt!");
+    return;
+  }
   const enabledRoles = [];
   if (settings.Dorfbewohner !== false) enabledRoles.push("Dorfbewohner");
   if (settings.Werwolf !== false) enabledRoles.push("Werwolf", "Werwolf");
@@ -543,9 +557,8 @@ function showCreateLobbyModal(type) {
   if(!name){ alert("Name eingeben"); return; }
   currentUser.name = name;
   let isPublic = (type === "public");
-  let localOnlineMode = "online"; // für private: "lokal" oder "online"
+  let localOnlineMode = "online";
   let settings = { Dorfbewohner:true, Werwolf:true, Seherin:true, Hexe:true, Amor:true, Jäger:true, "Kleines Mädchen":true };
-  
   let extraHtml = '';
   if (type === "private") {
     extraHtml = `
@@ -557,7 +570,6 @@ function showCreateLobbyModal(type) {
   } else {
     extraHtml = `<p style="margin: 1rem 0;">Öffentliche Lobby – jeder kann beitreten, automatischer Erzähler.</p>`;
   }
-  
   const modalContent = `
     <h3>${type === 'public' ? 'Öffentliche Lobby erstellen' : 'Private Lobby erstellen'}</h3>
     ${extraHtml}
@@ -568,9 +580,7 @@ function showCreateLobbyModal(type) {
     <button class="glass-button" id="confirmCreate" style="margin-top:1rem;">Erstellen</button>
   `;
   const modalDiv = showModal(modalContent, null);
-  
   modalDiv.querySelectorAll(".role-card").forEach(card => { card.addEventListener("click", () => card.classList.toggle("selected")); });
-  
   if (type === "private") {
     const localOnlineSwitch = modalDiv.querySelector("#localOnlineSwitch");
     const localOnlineText = modalDiv.querySelector("#localOnlineText");
