@@ -97,11 +97,14 @@ let roleDisplayTimeout = null;
 
 const ui = document.getElementById("ui-container");
 function render(html) { ui.innerHTML = html; ui.classList.add("fade-transition"); setTimeout(() => ui.classList.remove("fade-transition"), 500); }
+
+// Verbesserte Modal-Funktion mit korrekter Event-Bindung
 function showModal(contentHtml, onClose) {
   const modalDiv = document.createElement("div");
   modalDiv.className = "modal";
   modalDiv.innerHTML = `<div class="modal-content glass-card">${contentHtml}<div style="text-align:center; margin-top:1.5rem;"><button class="glass-button" id="modalClose">Schließen</button></div></div>`;
   document.body.appendChild(modalDiv);
+  // Event-Listener für Schließen-Button
   modalDiv.querySelector("#modalClose")?.addEventListener("click", () => { modalDiv.remove(); if(onClose) onClose(); });
   return modalDiv;
 }
@@ -130,7 +133,7 @@ function showRoleFor10Seconds(role, description) {
   }, 10000);
 }
 
-// Heartbeat & Inaktivitäts-Kick (ohne Reload)
+// Heartbeat & Inaktivitäts-Kick
 async function checkInactivePlayers(lobbyId, players) {
   const now = Date.now();
   const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
@@ -163,20 +166,23 @@ async function createLobby(playerName, isPublic, mode, settings) {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
   const lobbyRef = doc(db, "lobbies", code);
   const player = { id: currentUser.id, name: playerName, deviceId: deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
-  // mode: "online" (öffentlich, automatischer Erzähler) oder "private" (mit menschlichem Erzähler)
-  const isOnlineMode = (mode === "online");
+  // mode: "online" (automatischer Erzähler, öffentlich oder privat?) 
+  // Wir haben zwei Fälle: 
+  // - Öffentliche Lobby (immer online-Modus, öffentlich)
+  // - Private Lobby (kann entweder "lokal" (mit menschlichem Erzähler) oder "online" (automatisch) sein)
+  const isAutoNarrator = (mode === "online");
   await setDoc(lobbyRef, {
     code, hostId: currentUser.id, gameStarted: false, phase: "LOBBY", narratorStep: null,
     players: [player], isPublic: isPublic, mode: mode, settings: settings,
-    volunteerNarratorId: null, confirmedNarratorId: isOnlineMode ? "AUTOMATIC" : null,
+    volunteerNarratorId: null, confirmedNarratorId: isAutoNarrator ? "AUTOMATIC" : null,
     actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers: [], nightVictim: null, hunterRevenge: null, publicVotes: {} },
     votes: {}, nightActionsOrder: [], currentNightIndex: 0, lastUpdate: Date.now()
   });
   currentLobbyId = code;
   startHeartbeat(code);
   attachListener(code);
-  if (isOnlineMode) {
-    // Automatischer Start nach 3 Sekunden (genug Zeit für andere)
+  if (isAutoNarrator) {
+    // Automatischer Start nach 3 Sekunden
     setTimeout(() => startGame(code, [player], settings), 3000);
   }
 }
@@ -276,7 +282,7 @@ function renderByState(lobby) {
   }
 }
 
-// LOBBY VIEW (mit korrektem Public/Private Switch)
+// LOBBY VIEW
 function renderLobbyView(lobby, isHost, currentPlayer) {
   const players = lobby.players;
   const canStart = (lobby.mode === "online") ? (players.length >= 2) : (players.length >= 4 && lobby.confirmedNarratorId !== null);
@@ -326,7 +332,7 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
   `).join('');
   render(`
     <div class="glass-card">
-      <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span> <span style="margin-left:0.5rem;">${lobby.mode === 'online' ? '🌐 Online-Modus' : '🏠 Privat-Modus'}</span></h2>
+      <h2><i class="fas fa-door-open"></i> Lobby: ${lobby.code} <span class="public-badge ${lobby.isPublic ? 'public' : 'private'}">${lobby.isPublic ? 'ÖFFENTLICH' : 'PRIVAT'}</span> <span style="margin-left:0.5rem;">${lobby.mode === 'online' ? '🌐 Online-Modus' : '🏠 Lokal-Modus'}</span></h2>
       <div class="player-list">${playersHtml}</div>
       <div>${volunteerSection}</div>
       ${hostControls}
@@ -336,19 +342,26 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
       </div>
     </div>
   `);
+  // Kick-Buttons
   document.querySelectorAll(".kick-btn").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); kickPlayer(lobby.id, btn.dataset.playerId); }));
+  // Freiwilliger Erzähler
   if (lobby.mode !== "online" && !confirmedId && !alreadyVolunteered) document.getElementById("volunteerBtn")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "lobbies", lobby.id), { volunteerNarratorId: currentUser.id });
   });
   if (isHost && lobby.mode !== "online" && volunteerId) document.getElementById("confirmNarratorBtn")?.addEventListener("click", async () => {
     await updateDoc(doc(db, "lobbies", lobby.id), { confirmedNarratorId: volunteerId });
   });
+  // Settings speichern
   if (isHost) {
-    document.getElementById("saveSettingsBtn")?.addEventListener("click", async () => {
-      const newSettings = {};
-      document.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
-      await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings });
-    });
+    const saveBtn = document.getElementById("saveSettingsBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const newSettings = {};
+        document.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
+        await updateDoc(doc(db, "lobbies", lobby.id), { settings: newSettings });
+      });
+    }
+    // Rollen-Toggles initialisieren
     document.querySelectorAll(".role-card").forEach(card => card.addEventListener("click", () => card.classList.toggle("selected")));
   }
   document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby.id, lobby.players, lobby.settings));
@@ -449,7 +462,7 @@ function renderNarratorDashboard(lobby) {
   document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
 }
 
-// Nacht- und Abstimmungslogik (wie gehabt, aber gekürzt)
+// Nacht- und Abstimmungslogik (wie gehabt, gekürzt)
 async function advanceNightPhase(lobby) {
   const { id, nightActionsOrder, currentNightIndex } = lobby;
   const step = nightActionsOrder[currentNightIndex];
@@ -583,16 +596,16 @@ function renderPlayerGameView(lobby, player) {
   render(`<div class="glass-card"><h2>🌞 Tagphase</h2><p>Erzähler leitet.</p></div>`);
 }
 
-// ========== HAUPTSMENÜ (mit Auswahl Online/Privat) ==========
+// ========== HAUPTSMENÜ ==========
 function renderMainMenu() {
   render(`
     <div class="glass-card" style="max-width: 600px; margin:0 auto;">
       <h1><i class="fas fa-moon"></i> WERWOLF MOBILE</h1>
       <input type="text" id="playerName" placeholder="Dein Name" value="">
       <div class="icon-grid">
-        <div class="icon-button" id="createOnlineLobby">
+        <div class="icon-button" id="createPublicLobby">
           <i class="fas fa-globe"></i>
-          <span>🌐 Online-Lobby</span>
+          <span>🌍 Öffentliche Lobby</span>
         </div>
         <div class="icon-button" id="createPrivateLobby">
           <i class="fas fa-users"></i>
@@ -608,7 +621,7 @@ function renderMainMenu() {
   `);
   const nameInput = document.getElementById("playerName");
   nameInput?.addEventListener("input", (e) => { currentUser.name = e.target.value; });
-  document.getElementById("createOnlineLobby")?.addEventListener("click", () => showCreateLobbyModal("online"));
+  document.getElementById("createPublicLobby")?.addEventListener("click", () => showCreateLobbyModal("public"));
   document.getElementById("createPrivateLobby")?.addEventListener("click", () => showCreateLobbyModal("private"));
   document.getElementById("joinLobbyIcon")?.addEventListener("click", () => showJoinLobbyModal());
   refreshLobbyList();
@@ -625,52 +638,94 @@ async function refreshLobbyList() {
     document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) alert("Name eingeben"); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
   }
 }
-function showCreateLobbyModal(mode) {
+function showCreateLobbyModal(type) {
   const name = document.getElementById("playerName")?.value.trim();
   if(!name){ alert("Name eingeben"); return; }
   currentUser.name = name;
-  let isPublic = (mode === "online"); // online = öffentlich, private = privat
+  let isPublic = (type === "public");
+  let mode = "online"; // Standard für öffentliche Lobby
+  let localOnlineMode = "online"; // für private Lobby: "lokal" oder "online"
   let settings = { Dorfbewohner:true, Werwolf:true, Seherin:true, Hexe:true, Amor:true, Jäger:true, "Kleines Mädchen":true };
+  
+  let extraHtml = '';
+  if (type === "private") {
+    extraHtml = `
+      <div class="switch-container" style="margin: 1rem 0;">
+        <span class="switch-label"><i class="fas fa-users"></i> <span id="localOnlineText">Online-Modus (automatisch)</span></span>
+        <label class="switch"><input type="checkbox" id="localOnlineSwitch" checked><span class="slider"></span></label>
+      </div>
+      <div class="switch-container">
+        <span class="switch-label"><i class="fas ${isPublic ? 'fa-globe' : 'fa-lock'}"></i> <span id="privacyText">${isPublic ? 'Öffentlich' : 'Privat'}</span></span>
+        <label class="switch"><input type="checkbox" id="publicSwitch" ${isPublic ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+    `;
+  } else {
+    extraHtml = `<p style="margin: 1rem 0;">Öffentliche Lobby – jeder kann beitreten, automatischer Erzähler.</p>`;
+  }
+  
   const modalContent = `
-    <h3>${mode==='online'?'Online-Lobby erstellen':'Private Lobby erstellen'}</h3>
-    ${mode==='private' ? `
-    <div class="switch-container">
-      <span class="switch-label"><i class="fas ${isPublic ? 'fa-globe' : 'fa-lock'}"></i> <span id="privacyText">${isPublic ? 'Öffentlich' : 'Privat'}</span></span>
-      <label class="switch"><input type="checkbox" id="publicSwitch" ${isPublic ? 'checked' : ''}><span class="slider"></span></label>
-    </div>` : '<p>Online-Modus: automatisch öffentlich</p>'}
+    <h3>${type === 'public' ? 'Öffentliche Lobby erstellen' : 'Private Lobby erstellen'}</h3>
+    ${extraHtml}
     <div><strong>Rollen auswählen:</strong></div>
     <div class="roles-grid" id="roleSettingsModal">
       ${Object.keys(settings).map(role=>`<div class="role-card selected" data-role="${role}"><i class="fas ${role==='Werwolf'?'fa-paw':role==='Seherin'?'fa-eye':role==='Hexe'?'fa-flask':role==='Amor'?'fa-heart':role==='Jäger'?'fa-crosshairs':role==='Kleines Mädchen'?'fa-child':'fa-user'}"></i> ${role}</div>`).join('')}
     </div>
     <button class="glass-button" id="confirmCreate" style="margin-top:1rem;">Erstellen</button>
   `;
-  showModal(modalContent, null);
-  const modalDiv = document.querySelector(".modal");
-  if(mode==='private'){
-    const privacySpan = modalDiv.querySelector("#privacyText");
-    const publicSwitch = modalDiv.querySelector("#publicSwitch");
-    publicSwitch.addEventListener("change",(e)=>{ isPublic=e.target.checked; privacySpan.innerHTML=isPublic?'🌐 Öffentlich':'🔒 Privat'; });
-  }
-  modalDiv.querySelectorAll(".role-card").forEach(card=>card.addEventListener("click",()=>card.classList.toggle("selected")));
-  modalDiv.querySelector("#confirmCreate")?.addEventListener("click",async()=>{
-    const newSettings={};
-    modalDiv.querySelectorAll(".role-card").forEach(card=>{ newSettings[card.dataset.role]=card.classList.contains("selected"); });
-    await createLobby(currentUser.name, (mode==='online'?true:isPublic), mode, newSettings);
-    modalDiv.remove();
+  const modalDiv = showModal(modalContent, null);
+  
+  // Rollen-Klicks im Modal
+  modalDiv.querySelectorAll(".role-card").forEach(card => {
+    card.addEventListener("click", () => card.classList.toggle("selected"));
   });
+  
+  if (type === "private") {
+    const localOnlineSwitch = modalDiv.querySelector("#localOnlineSwitch");
+    const localOnlineText = modalDiv.querySelector("#localOnlineText");
+    const publicSwitch = modalDiv.querySelector("#publicSwitch");
+    const privacyText = modalDiv.querySelector("#privacyText");
+    
+    localOnlineSwitch.addEventListener("change", (e) => {
+      localOnlineMode = e.target.checked ? "online" : "lokal";
+      localOnlineText.innerHTML = localOnlineMode === "online" ? "Online-Modus (automatisch)" : "Lokal-Modus (mit Erzähler)";
+      // Farbe des Switches? Wir zeigen nur Text an.
+    });
+    if (publicSwitch) {
+      publicSwitch.addEventListener("change", (e) => {
+        isPublic = e.target.checked;
+        privacyText.innerHTML = isPublic ? '🌐 Öffentlich' : '🔒 Privat';
+      });
+    }
+    modalDiv.querySelector("#confirmCreate")?.addEventListener("click", async () => {
+      const newSettings = {};
+      modalDiv.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
+      await createLobby(currentUser.name, isPublic, localOnlineMode, newSettings);
+      modalDiv.remove();
+    });
+  } else {
+    // öffentliche Lobby
+    modalDiv.querySelector("#confirmCreate")?.addEventListener("click", async () => {
+      const newSettings = {};
+      modalDiv.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
+      await createLobby(currentUser.name, true, "online", newSettings);
+      modalDiv.remove();
+    });
+  }
 }
 function showJoinLobbyModal() {
   const name = document.getElementById("playerName")?.value.trim();
   if(!name){ alert("Name eingeben"); return; }
   currentUser.name = name;
   const modalContent = `<h3>Lobby beitreten</h3><input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase"><button class="glass-button" id="confirmJoin" style="margin-top:1rem;">Beitreten</button>`;
-  showModal(modalContent, null);
-  const modalDiv = document.querySelector(".modal");
-  modalDiv.querySelector("#confirmJoin")?.addEventListener("click",async()=>{ const code=modalDiv.querySelector("#lobbyCodeInput").value.trim().toUpperCase(); if(code) try{ await joinLobby(code,currentUser.name); modalDiv.remove(); }catch(e){ alert(e.message); } });
+  const modalDiv = showModal(modalContent, null);
+  modalDiv.querySelector("#confirmJoin")?.addEventListener("click", async () => {
+    const code = modalDiv.querySelector("#lobbyCodeInput").value.trim().toUpperCase();
+    if(code) try{ await joinLobby(code, currentUser.name); modalDiv.remove(); } catch(e){ alert(e.message); }
+  });
 }
 function showLobbyMenu() { renderMainMenu(); }
 
-// ========== INIT & EVENT LISTENER ==========
+// ========== INIT ==========
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("accept-consent")?.addEventListener("click", acceptConsent);
   document.getElementById("reject-consent")?.addEventListener("click", rejectConsent);
