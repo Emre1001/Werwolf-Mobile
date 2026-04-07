@@ -22,6 +22,21 @@
     </div>
   </div>
 
+  <!-- Chat Widget (persistent, außerhalb ui-container) -->
+  <div id="chat-container" class="chat-container" style="display: none;">
+    <div class="chat-header" id="chat-header">
+      <span id="chat-title">💬 Chat</span>
+      <button id="chat-toggle-btn" class="chat-toggle-btn">−</button>
+    </div>
+    <div class="chat-body" id="chat-body">
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Nachricht..." maxlength="200" autocomplete="off">
+        <button class="chat-send-btn" id="chat-send"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+
   <!-- Consent-Popup (zentral, wie Homescreen) -->
   <div id="consent-modal" class="modal" style="display: none;">
     <div class="modal-content glass-card" style="max-width: 450px; text-align: center;">

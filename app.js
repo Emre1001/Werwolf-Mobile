@@ -1,6 +1,6 @@
 // app.js – Werwolf Mobile | Kein automatischer Start, min. 4 Spieler
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // ========== FIREBASE KONFIGURATION ==========
 const firebaseConfig = {
@@ -52,6 +52,12 @@ let unsubscribeLobby = null;
 let heartbeatInterval = null;
 let deferredPrompt = null;
 let roleDisplayTimeout = null;
+let lastStateFingerprint = null;
+let unsubscribeChat = null;
+let chatMessages = [];
+let currentChatChannel = null;
+let chatClearedAt = 0;
+let inactiveCheckInterval = null;
 
 const ui = document.getElementById("ui-container");
 function render(html) { ui.innerHTML = html; ui.classList.add("fade-transition"); setTimeout(() => ui.classList.remove("fade-transition"), 500); }
@@ -78,30 +84,41 @@ function showRoleFor10Seconds(role, description) {
   roleDisplayTimeout = setTimeout(() => { clearInterval(interval); roleDisplay.style.display = "none"; }, 10000);
 }
 
-async function checkInactivePlayers(lobbyId, players) {
-  const now = Date.now();
-  const inactive = players.filter(p => p.id !== currentUser.id && (!p.lastSeen || now - p.lastSeen > 15000));
-  if (inactive.length === 0) return;
-  const newPlayers = players.filter(p => !inactive.some(i => i.id === p.id));
-  const lobbyRef = doc(db, "lobbies", lobbyId);
-  await updateDoc(lobbyRef, { players: newPlayers });
-  if (newPlayers.length === 0) await deleteDoc(lobbyRef);
-}
-function startHeartbeat(lobbyId) {
-  if (heartbeatInterval) clearInterval(heartbeatInterval);
-  heartbeatInterval = setInterval(async () => {
-    if (!currentLobbyId || !firebaseReady) return;
-    const lobbyRef = doc(db, "lobbies", currentLobbyId);
+// Inaktive Spieler prüfen – nur vom Host aufgerufen, separates Intervall
+async function checkInactivePlayers(lobbyId) {
+  if (!currentLobbyId || !firebaseReady) return;
+  try {
+    const lobbyRef = doc(db, "lobbies", lobbyId);
     const lobbySnap = await getDoc(lobbyRef);
     if (!lobbySnap.exists()) return;
     const lobby = lobbySnap.data();
-    const idx = lobby.players.findIndex(p => p.id === currentUser.id);
-    if (idx !== -1) {
-      const updated = [...lobby.players];
-      updated[idx] = { ...updated[idx], lastSeen: Date.now() };
-      await updateDoc(lobbyRef, { players: updated, lastUpdate: Date.now() });
-    }
-  }, 10000);
+    if (lobby.hostId !== currentUser.id) return;
+    const now = Date.now();
+    const hb = lobby.heartbeats || {};
+    const inactive = lobby.players.filter(p => p.id !== currentUser.id && (!hb[p.id] || now - hb[p.id] > 120000));
+    if (inactive.length === 0) return;
+    const newPlayers = lobby.players.filter(p => !inactive.some(i => i.id === p.id));
+    if (newPlayers.length === 0) await deleteDoc(lobbyRef);
+    else await updateDoc(lobbyRef, { players: newPlayers });
+  } catch(e) { console.warn("Inactive check error", e); }
+}
+function startHeartbeat(lobbyId) {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  // Sofort heartbeat senden
+  const sendHB = async () => {
+    if (!currentLobbyId || !firebaseReady) return;
+    try {
+      await updateDoc(doc(db, "lobbies", currentLobbyId), {
+        [`heartbeats.${currentUser.id}`]: Date.now()
+      });
+    } catch(e) { console.warn("HB error", e); }
+  };
+  sendHB();
+  heartbeatInterval = setInterval(sendHB, 30000);
+}
+function startInactiveCheck(lobbyId) {
+  if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
+  inactiveCheckInterval = setInterval(() => checkInactivePlayers(lobbyId), 60000);
 }
 
 async function createLobby(playerName, isPublic, mode, settings) {
@@ -115,10 +132,12 @@ async function createLobby(playerName, isPublic, mode, settings) {
     players: [player], isPublic: isPublic, mode: mode, settings: settings,
     volunteerNarratorId: null, confirmedNarratorId: isAutoNarrator ? "AUTOMATIC" : null,
     actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers: [], nightVictim: null, hunterRevenge: null, publicVotes: {} },
-    votes: {}, nightActionsOrder: [], currentNightIndex: 0, lastUpdate: Date.now()
+    votes: {}, nightActionsOrder: [], currentNightIndex: 0, lastUpdate: Date.now(),
+    heartbeats: { [currentUser.id]: Date.now() }, chatClearedAt: Date.now()
   });
   currentLobbyId = code;
   startHeartbeat(code);
+  startInactiveCheck(code);
   attachListener(code);
   // KEIN AUTOMATISCHER START MEHR
 }
@@ -150,6 +169,7 @@ async function joinLobby(code, playerName) {
   }
   currentLobbyId = code;
   startHeartbeat(code);
+  startInactiveCheck(code);
   attachListener(code);
 }
 
@@ -194,26 +214,55 @@ async function leaveLobby(lobbyId, playerId, hostId) {
   if (playerId === currentUser.id) {
     currentLobbyId = null;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
+    hideChat();
     showLobbyMenu();
   }
 }
 
 function attachListener(lobbyId) {
   if (unsubscribeLobby) unsubscribeLobby();
+  lastStateFingerprint = null;
   const lobbyRef = doc(db, "lobbies", lobbyId);
   unsubscribeLobby = onSnapshot(lobbyRef, async (snap) => {
     if (!snap.exists()) {
       render(`<div class="glass-card"><h2>Lobby aufgelöst</h2><button class="glass-button" id="backHome">Startseite</button></div>`);
-      document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; showLobbyMenu(); });
+      document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; hideChat(); showLobbyMenu(); });
+      hideChat();
       return;
     }
     const data = { id: snap.id, ...snap.data() };
-    await checkInactivePlayers(lobbyId, data.players);
     if (!data.players.find(p => p.id === currentUser.id)) {
       currentLobbyId = null;
       if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
+      hideChat();
       showLobbyMenu();
       return;
+    }
+    // Chat-Cleared-Timestamp aktualisieren
+    chatClearedAt = data.chatClearedAt || 0;
+    // Chat-Kanal bestimmen (nur Online-Modus)
+    const player = data.players.find(p => p.id === currentUser.id);
+    const newChannel = determineChatChannel(data, player);
+    if (newChannel !== currentChatChannel) {
+      currentChatChannel = newChannel;
+      if (newChannel && data.mode === "online") {
+        showChat(newChannel);
+        if (!unsubscribeChat) attachChatListener(lobbyId);
+      } else {
+        hideChat();
+      }
+    }
+    updateChatDisplay();
+    // State-Deduplizierung: Nur rendern wenn sich etwas Relevantes geändert hat
+    const fp = stateFingerprint(data);
+    if (fp === lastStateFingerprint) return;
+    lastStateFingerprint = fp;
+    // Gewinnbedingung prüfen
+    if (data.gameStarted) {
+      const win = checkWinCondition(data.players);
+      if (win) { showWinScreen(win, data); return; }
     }
     renderByState(data);
     if (data.mode === "online" && data.gameStarted && data.hostId === currentUser.id) {
@@ -221,6 +270,118 @@ function attachListener(lobbyId) {
     }
   });
 }
+
+// ========== STATE FINGERPRINT ==========
+function stateFingerprint(lobby) {
+  return JSON.stringify({
+    gameStarted: lobby.gameStarted, phase: lobby.phase, narratorStep: lobby.narratorStep,
+    currentNightIndex: lobby.currentNightIndex, hostId: lobby.hostId,
+    players: lobby.players?.map(p => `${p.id}:${p.name}:${p.isAlive}:${p.role}`),
+    votes: lobby.votes, confirmedNarratorId: lobby.confirmedNarratorId,
+    volunteerNarratorId: lobby.volunteerNarratorId, settings: lobby.settings,
+    actionData: { wv: lobby.actionData?.werewolfVotes, st: lobby.actionData?.seerTarget,
+      sgp: lobby.actionData?.smallGirlPeeked, w: lobby.actionData?.witch, nv: lobby.actionData?.nightVictim }
+  });
+}
+
+// ========== WIN CONDITION ==========
+function checkWinCondition(players) {
+  const alive = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
+  if (alive.length === 0) return null;
+  const wolves = alive.filter(p => p.role === "Werwolf");
+  const villagers = alive.filter(p => p.role !== "Werwolf");
+  if (wolves.length === 0) return "VILLAGE";
+  if (wolves.length >= villagers.length) return "WEREWOLF";
+  return null;
+}
+function showWinScreen(winner, lobby) {
+  hideChat();
+  const emoji = winner === "VILLAGE" ? "🏘️" : "🐺";
+  const title = winner === "VILLAGE" ? "Dorf gewinnt!" : "Werwölfe gewinnen!";
+  const desc = winner === "VILLAGE" ? "Alle Werwölfe wurden eliminiert!" : "Die Werwölfe haben das Dorf übernommen!";
+  render(`<div class="glass-card" style="text-align:center; padding:2.5rem;">
+    <div style="font-size:4rem; margin-bottom:1rem;">${emoji}</div>
+    <h1>${title}</h1><p style="margin:1rem 0; opacity:0.8;">${desc}</p>
+    <div style="margin:1.5rem 0;"><strong>Rollen:</strong><br>${lobby.players.map(p => `<span class="player-tag">${p.name}: ${p.role} ${p.isAlive ? '✅' : '💀'}</span>`).join(' ')}</div>
+    <button class="glass-button" id="backToMenu">Zurück zum Menü</button>
+  </div>`);
+  document.getElementById("backToMenu")?.addEventListener("click", async () => {
+    try { await deleteDoc(doc(db, "lobbies", lobby.id)); } catch(e) {}
+    currentLobbyId = null; showLobbyMenu();
+  });
+}
+
+// ========== CHAT SYSTEM ==========
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+function determineChatChannel(lobby, player) {
+  if (!lobby || !player || lobby.mode === "lokal") return null;
+  if (!lobby.gameStarted) return "public";
+  if (!player.isAlive) return "dead";
+  if (lobby.phase === "NIGHT") return player.role === "Werwolf" ? "wolf" : null;
+  return "public"; // DAY + VOTING
+}
+
+function attachChatListener(lobbyId) {
+  if (unsubscribeChat) unsubscribeChat();
+  const messagesRef = collection(db, "lobbies", lobbyId, "messages");
+  const q = query(messagesRef, orderBy("timestamp", "asc"));
+  unsubscribeChat = onSnapshot(q, (snap) => {
+    chatMessages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    updateChatDisplay();
+  });
+}
+
+function updateChatDisplay() {
+  const container = document.getElementById("chat-messages");
+  if (!container || !currentChatChannel) return;
+  const visible = chatMessages.filter(m => m.channel === currentChatChannel && m.timestamp > chatClearedAt);
+  if (visible.length === 0) {
+    container.innerHTML = '<div class="chat-empty">Keine Nachrichten</div>';
+    return;
+  }
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+  container.innerHTML = visible.map(m => {
+    let cls = "chat-msg";
+    if (m.senderId === currentUser.id) cls += " chat-msg-own";
+    if (m.channel === "wolf") cls += " chat-msg-wolf";
+    if (m.channel === "dead") cls += " chat-msg-dead";
+    return `<div class="${cls}"><span class="chat-msg-name">${escapeHtml(m.senderName)}</span><span class="chat-msg-text">${escapeHtml(m.text)}</span></div>`;
+  }).join('');
+  if (wasAtBottom) container.scrollTop = container.scrollHeight;
+}
+
+async function sendChatMessage(text) {
+  if (!text.trim() || !currentLobbyId || !currentChatChannel) return;
+  try {
+    await addDoc(collection(db, "lobbies", currentLobbyId, "messages"), {
+      senderId: currentUser.id, senderName: currentUser.name,
+      text: text.trim().substring(0, 200), timestamp: Date.now(), channel: currentChatChannel
+    });
+  } catch(e) { console.warn("Chat send error", e); }
+}
+
+function showChat(channel) {
+  currentChatChannel = channel;
+  const container = document.getElementById("chat-container");
+  if (!container) return;
+  container.style.display = "flex";
+  const title = document.getElementById("chat-title");
+  if (title) {
+    if (channel === "wolf") title.textContent = "🐺 Werwolf-Chat";
+    else if (channel === "dead") title.textContent = "⚰️ Geister-Chat";
+    else title.textContent = "💬 Chat";
+  }
+  updateChatDisplay();
+}
+
+function hideChat() {
+  currentChatChannel = null;
+  const container = document.getElementById("chat-container");
+  if (container) container.style.display = "none";
+  if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
+}
+
 
 /**
  * Automatische Phasensteuerung im Online-Modus.
@@ -321,7 +482,7 @@ function renderHostOnlyGameView(lobby) {
     </div>
   `);
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
-  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
 }
 
 function renderLobbyView(lobby, isHost, currentPlayer) {
@@ -472,7 +633,8 @@ async function startGame(lobby) {
   await updateDoc(doc(db, "lobbies", lobbyCode), {
     gameStarted: true, phase: "NIGHT", players: assigned,
     actionData: { werewolfVotes: {}, seerTarget: null, witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, smallGirlPeeked: false, peekResult: null, lovers, nightVictim: null, hunterRevenge: null, publicVotes: {} },
-    nightActionsOrder: nightOrder, currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}
+    nightActionsOrder: nightOrder, currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {},
+    chatClearedAt: Date.now()
   });
 }
 
@@ -494,7 +656,7 @@ function renderNarratorDashboard(lobby) {
 
   const nextHandler = async () => {
     if (phase === "NIGHT") await advanceNightPhase(lobby);
-    else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {} });
+    else if (phase === "DAY") await updateDoc(doc(db, "lobbies", id), { phase: "VOTING", narratorStep: "VOTING", votes: {}, chatClearedAt: Date.now() });
     else if (phase === "VOTING") await resolveVoting(lobby);
   };
 
@@ -516,7 +678,7 @@ function renderNarratorDashboard(lobby) {
   `);
   document.getElementById("narratorNext")?.addEventListener("click", nextHandler);
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id, lobby.hostId));
-  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
 }
 
 async function advanceNightPhase(lobby) {
@@ -527,7 +689,7 @@ async function advanceNightPhase(lobby) {
   const nextIdx = currentNightIndex + 1;
   if (nextIdx >= nightActionsOrder.length) {
     await resolveNightDeath(lobby);
-    await updateDoc(doc(db, "lobbies", id), { phase: "DAY", narratorStep: "DAY" });
+    await updateDoc(doc(db, "lobbies", id), { phase: "DAY", narratorStep: "DAY", chatClearedAt: Date.now() });
   } else {
     await updateDoc(doc(db, "lobbies", id), { currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx] });
   }
@@ -583,7 +745,7 @@ async function resolveVoting(lobby) {
     const other = lovers.find(l => l !== maxId);
     players = players.map(p => p.id === other ? { ...p, isAlive: false } : p);
   }
-  await updateDoc(doc(db, "lobbies", lobby.id), { players, phase: "NIGHT", currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}, "actionData.werewolfVotes": {} });
+  await updateDoc(doc(db, "lobbies", lobby.id), { players, phase: "NIGHT", currentNightIndex: 0, narratorStep: "WEREWOLF", votes: {}, "actionData.werewolfVotes": {}, chatClearedAt: Date.now() });
 }
 
 function renderPlayerGameView(lobby, player) {
@@ -603,7 +765,7 @@ function renderPlayerGameView(lobby, player) {
       </div>
     `);
     document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
-    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
     return;
   }
 
@@ -623,7 +785,7 @@ function renderPlayerGameView(lobby, player) {
 
   const attachBaseListeners = () => {
     document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
-    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); showLobbyMenu(); } });
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
   };
 
   if (phase === "NIGHT") {
@@ -719,8 +881,17 @@ function renderPlayerGameView(lobby, player) {
     attachBaseListeners();
     return;
   }
-  render(`<div class="glass-card">${baseHeader}<h2>🌞 Tagphase</h2><p>Diskutiert in der Gruppe.</p></div>`);
+  render(`<div class="glass-card">${baseHeader}<h2>🌞 Tagphase</h2><p>Diskutiert! Nutzt den Chat unten rechts.</p></div>`);
   attachBaseListeners();
+}
+
+function flashNameInput() {
+  const input = document.getElementById("playerName");
+  if (input) {
+    input.classList.add("error-flash");
+    input.placeholder = "Name eingeben";
+    setTimeout(() => input.classList.remove("error-flash"), 800);
+  }
 }
 
 function renderMainMenu() {
@@ -767,12 +938,12 @@ async function refreshLobbyList() {
     const activeLobbies = lobbies.filter(l => (Date.now() - (l.lastUpdate || 0)) < 5 * 60 * 1000);
     if(activeLobbies.length===0) listDiv.innerHTML='<p>Keine öffentlichen Lobbys.</p>';
     else listDiv.innerHTML=`<h3>Öffentliche Lobbys</h3><div class="player-list">${activeLobbies.map(l=>`<div class="player-tag">${l.code} (${l.players.length}) <button class="glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
-    document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) alert("Name eingeben"); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
+    document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) flashNameInput(); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
   }
 }
 function showCreateLobbyModal(type) {
   const name = document.getElementById("playerName")?.value.trim();
-  if(!name){ alert("Name eingeben"); return; }
+  if(!name){ flashNameInput(); return; }
   currentUser.name = name;
   let isPublic = (type === "public");
   let localOnlineMode = "online";
@@ -823,7 +994,7 @@ function showCreateLobbyModal(type) {
 }
 function showJoinLobbyModal() {
   const name = document.getElementById("playerName")?.value.trim();
-  if(!name){ alert("Name eingeben"); return; }
+  if(!name){ flashNameInput(); return; }
   currentUser.name = name;
   const modalContent = `<h3>Lobby beitreten</h3><input type="text" id="lobbyCodeInput" placeholder="6-stelliger Code" maxlength="6" style="text-transform:uppercase"><button class="glass-button" id="confirmJoin" style="margin-top:1rem;">Beitreten</button>`;
   const modalDiv = showModal(modalContent, null);
@@ -832,7 +1003,7 @@ function showJoinLobbyModal() {
     if(code) try{ await joinLobby(code, currentUser.name); modalDiv.remove(); } catch(e){ alert(e.message); }
   });
 }
-function showLobbyMenu() { renderMainMenu(); }
+function showLobbyMenu() { hideChat(); renderMainMenu(); }
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("accept-consent")?.addEventListener("click", acceptConsent);
@@ -841,6 +1012,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("show-datenschutz")?.addEventListener("click", (e) => { e.preventDefault(); showDatenschutz(); });
   document.getElementById("close-legal-modal")?.addEventListener("click", closeLegalModal);
   document.getElementById("offline-retry")?.addEventListener("click", () => { if(navigator.onLine){ hideOfflineModal(); initApp(); } else alert("Immer noch offline."); });
+  // Chat Event Listeners
+  document.getElementById("chat-send")?.addEventListener("click", () => {
+    const input = document.getElementById("chat-input");
+    if (input && input.value.trim()) { sendChatMessage(input.value); input.value = ""; }
+  });
+  document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); const input = e.target; if (input.value.trim()) { sendChatMessage(input.value); input.value = ""; } }
+  });
+  document.getElementById("chat-toggle-btn")?.addEventListener("click", () => {
+    const body = document.getElementById("chat-body");
+    const btn = document.getElementById("chat-toggle-btn");
+    if (body.style.display === "none") { body.style.display = "flex"; btn.textContent = "−"; }
+    else { body.style.display = "none"; btn.textContent = "+"; }
+  });
   if(!consentGiven) showConsentModal();
   else initApp();
 });
