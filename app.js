@@ -309,14 +309,16 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
   const players = lobby.players;
   const playerCount = players.length;
   const MIN_PLAYERS = 4;
+  const confirmedId = lobby.confirmedNarratorId;
+  const activePlayerCount = players.length - (confirmedId && lobby.mode === "lokal" ? 1 : 0);
+  
   let canStart = false;
   if (lobby.mode === "online") {
-    canStart = (playerCount >= MIN_PLAYERS);
+    canStart = (activePlayerCount >= MIN_PLAYERS);
   } else {
-    canStart = (playerCount >= MIN_PLAYERS && lobby.confirmedNarratorId !== null);
+    canStart = (activePlayerCount >= MIN_PLAYERS && confirmedId !== null);
   }
   const volunteerId = lobby.volunteerNarratorId;
-  const confirmedId = lobby.confirmedNarratorId;
   const alreadyVolunteered = (volunteerId === currentUser.id);
   let volunteerSection = '';
   if (lobby.mode !== "online") {
@@ -359,8 +361,8 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
   const startDisabled = !canStart;
   let startHint = "";
   if (!canStart) {
-    if (playerCount < MIN_PLAYERS) startHint = `${MIN_PLAYERS} Spieler benötigt (aktuell ${playerCount})`;
-    else if (lobby.mode !== "online" && lobby.confirmedNarratorId === null) startHint = "Erzähler muss bestätigt werden";
+    if (activePlayerCount < MIN_PLAYERS) startHint = `${MIN_PLAYERS} Spieler benötigt (aktuell ${activePlayerCount})`;
+    else if (lobby.mode !== "online" && confirmedId === null) startHint = "Erzähler muss bestätigt werden";
   }
   render(`
     <div class="glass-card">
