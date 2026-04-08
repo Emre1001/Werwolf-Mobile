@@ -913,7 +913,6 @@ function renderMainMenu() {
           <span>Beitreten</span>
         </div>
       </div>
-      <div id="lobbyList"></div>
       <div style="text-align: center; margin-top: 1.5rem;">
         <a href="https://paypal.me/Emre100120" target="_blank" class="glass-button" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none;">
           <i class="fab fa-paypal"></i> Spenden (PayPal)
@@ -926,25 +925,6 @@ function renderMainMenu() {
   document.getElementById("createPublicLobby")?.addEventListener("click", () => showCreateLobbyModal("public"));
   document.getElementById("createPrivateLobby")?.addEventListener("click", () => showCreateLobbyModal("private"));
   document.getElementById("joinLobbyIcon")?.addEventListener("click", () => showJoinLobbyModal());
-  refreshLobbyList();
-}
-async function refreshLobbyList() {
-  if(!firebaseReady) return;
-  const q = query(collection(db, "lobbies"), where("gameStarted", "==", false), where("isPublic", "==", true));
-  const snap = await getDocs(q);
-  const lobbies = snap.docs.map(d => ({ code: d.id, ...d.data() }));
-  
-  // Automatisches Aufräumen beim Laden der Liste
-  await cleanupStaleLobbies(lobbies);
-  
-  const listDiv = document.getElementById("lobbyList");
-  if(listDiv){
-    // Erneutes Abfragen nach dem Aufräumen für die Anzeige
-    const activeLobbies = lobbies.filter(l => (Date.now() - (l.lastUpdate || 0)) < 5 * 60 * 1000);
-    if(activeLobbies.length===0) listDiv.innerHTML='<p>Keine öffentlichen Lobbys.</p>';
-    else listDiv.innerHTML=`<h3>Öffentliche Lobbys</h3><div class="player-list">${activeLobbies.map(l=>`<div class="player-tag">${l.code} (${l.players.length}) <button class="glass-button-small" data-code="${l.code}">Beitreten</button></div>`).join('')}</div>`;
-    document.querySelectorAll("[data-code]").forEach(btn=>btn.addEventListener("click",async()=>{ const name=document.getElementById("playerName")?.value.trim(); if(!name) flashNameInput(); else { currentUser.name=name; await joinLobby(btn.dataset.code,name); } }));
-  }
 }
 function showCreateLobbyModal(type) {
   const name = document.getElementById("playerName")?.value.trim();
