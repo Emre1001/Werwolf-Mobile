@@ -791,6 +791,10 @@ input:checked + .slider:before {
   .icon-button span { font-size: 0.8rem; }
   .roles-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
   .chat-container { left: 0.5rem; right: 0.5rem; width: auto; bottom: 0.5rem; }
+  .join-split { flex-direction: column-reverse; gap: 1.5rem; }
+  .join-split-left { border-right: none; border-top: 1px solid rgba(255,255,255,0.1); padding-right: 0; padding-top: 1.5rem; }
+  .code-input-container { gap: 0.3rem; }
+  .code-box { width: 2.5rem; height: 3.5rem; font-size: 1.4rem; padding: 0; }
 }
 @media (prefers-color-scheme: light) {
   .chat-container {
