@@ -366,6 +366,7 @@ function showChat(channel) {
   const container = document.getElementById("chat-container");
   if (!container) return;
   container.style.display = "flex";
+  container.style.animation = "chatSlideIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards";
   const title = document.getElementById("chat-title");
   if (title) {
     if (channel === "wolf") title.textContent = "🐺 Werwolf-Chat";
@@ -378,7 +379,13 @@ function showChat(channel) {
 function hideChat() {
   currentChatChannel = null;
   const container = document.getElementById("chat-container");
-  if (container) container.style.display = "none";
+  if (container && container.style.display !== "none") {
+    container.style.animation = "chatSlideOut 0.3s ease forwards";
+    setTimeout(() => {
+      container.style.display = "none";
+      container.style.animation = "";
+    }, 300);
+  }
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
 }
 
@@ -1082,11 +1089,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); const input = e.target; if (input.value.trim()) { sendChatMessage(input.value); input.value = ""; } }
   });
-  document.getElementById("chat-toggle-btn")?.addEventListener("click", () => {
-    const body = document.getElementById("chat-body");
+  const toggleChat = () => {
+    const container = document.getElementById("chat-container");
     const btn = document.getElementById("chat-toggle-btn");
-    if (body.style.display === "none") { body.style.display = "flex"; btn.textContent = "−"; }
-    else { body.style.display = "none"; btn.textContent = "+"; }
+    container.classList.toggle("collapsed");
+    btn.textContent = container.classList.contains("collapsed") ? "+" : "−";
+  };
+  document.getElementById("chat-header")?.addEventListener("click", toggleChat);
+  document.getElementById("chat-toggle-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleChat();
   });
   if(!consentGiven) showConsentModal();
   else initApp();

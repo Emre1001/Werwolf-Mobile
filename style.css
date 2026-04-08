@@ -186,10 +186,16 @@ body {
   backdrop-filter: blur(14px);
   border-radius: 2rem;
   border: 1px solid rgba(139, 92, 246, 0.3);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(139, 92, 246, 0.2);
   padding: 1.8rem;
-  transition: all 0.3s ease;
   color: white;
+  animation: modalScaleUp 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+}
+
+@keyframes modalScaleUp {
+  0% { transform: scale(0.95) translateY(15px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
 }
 
 h1, h2, h3 {
@@ -465,6 +471,7 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: fadeIn 0.3s ease;
 }
 .modal-content {
   max-width: 450px;
@@ -622,11 +629,21 @@ input:checked + .slider:before {
   backdrop-filter: blur(18px);
   border: 1px solid rgba(139, 92, 246, 0.35);
   box-shadow: 0 20px 40px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.15);
-  animation: chatSlideIn 0.3s ease;
+  animation: chatSlideIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+  transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1), box-shadow 0.4s ease;
+  will-change: transform;
+}
+.chat-container.collapsed {
+  transform: translateY(calc(100% - 46px));
+  box-shadow: 0 10px 20px -5px rgba(0,0,0,0.4);
 }
 @keyframes chatSlideIn {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes chatSlideOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(20px) scale(0.95); }
 }
 .chat-header {
   display: flex;
@@ -659,6 +676,13 @@ input:checked + .slider:before {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  transition: opacity 0.3s ease 0.1s, visibility 0.3s 0.1s;
+}
+.chat-container.collapsed .chat-body {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s;
 }
 .chat-messages {
   flex: 1;
