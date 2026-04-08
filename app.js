@@ -366,7 +366,11 @@ function showChat(channel) {
   const container = document.getElementById("chat-container");
   if (!container) return;
   container.style.display = "flex";
-  container.style.animation = "chatSlideIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards";
+  // Reset animation and trigger reflow
+  container.style.animation = "none";
+  void container.offsetWidth;
+  // Apply animation without forwards so transform can transition later
+  container.style.animation = "chatSlideIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1)";
   const title = document.getElementById("chat-title");
   if (title) {
     if (channel === "wolf") title.textContent = "🐺 Werwolf-Chat";

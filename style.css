@@ -629,7 +629,6 @@ input:checked + .slider:before {
   backdrop-filter: blur(18px);
   border: 1px solid rgba(139, 92, 246, 0.35);
   box-shadow: 0 20px 40px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.15);
-  animation: chatSlideIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
   transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1), box-shadow 0.4s ease;
   will-change: transform;
 }
