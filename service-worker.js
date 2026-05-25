@@ -1,4 +1,4 @@
-const CACHE_NAME = "werwolf-pwa-v7";
+const CACHE_NAME = "werwolf-pwa-v8";
 const urls = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json"];
 self.addEventListener("install", e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(urls))); });
 self.addEventListener("fetch", e => {

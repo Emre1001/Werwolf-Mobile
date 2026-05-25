@@ -491,6 +491,31 @@ input:checked + .slider:before { transform: translateX(24px); }
   box-shadow: 0 0 15px rgba(168, 85, 247, 0.25);
 }
 
+.role-card.locked {
+  cursor: not-allowed;
+  position: relative;
+  background: rgba(139, 92, 246, 0.25);
+  border-color: var(--purple);
+  opacity: 0.85;
+}
+.role-card.locked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 8px,
+    rgba(139, 92, 246, 0.08) 8px,
+    rgba(139, 92, 246, 0.08) 16px
+  );
+  pointer-events: none;
+}
+.role-card.locked:hover {
+  transform: none;
+}
+
 .role-card i { font-size: 1.2rem; }
 
 /* ========== MODAL ========== */
@@ -1314,6 +1339,10 @@ input:checked + .slider:before { transform: translateX(24px); }
   .role-card.selected {
     background: rgba(139, 92, 246, 0.15) !important;
     border-color: var(--purple) !important;
+  }
+  .role-card.locked {
+    background: rgba(139, 92, 246, 0.12) !important;
+    opacity: 0.75;
   }
   .switch-container { background: rgba(0, 0, 0, 0.04) !important; color: #1e1f3a !important; }
   .vote-detail-list { background: rgba(0, 0, 0, 0.04) !important; color: #1e1f3a !important; }

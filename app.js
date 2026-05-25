@@ -262,6 +262,26 @@ function showChoiceModal(title, options, callback) {
   });
 }
 
+// ========== CONFIRM MODAL (replaces native confirm()) ==========
+function showConfirmModal(message, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.className = "choice-modal-overlay";
+  overlay.innerHTML = `
+    <div class="glass-card" style="max-width:380px; width:90%; padding:2rem; text-align:center;">
+      <h3 style="margin-bottom:1rem;">⚠️ Bestätigung</h3>
+      <p style="opacity:0.85; margin-bottom:1.5rem;">${message}</p>
+      <div style="display:flex; gap:1rem; justify-content:center;">
+        <button class="glass-button" id="confirmYes" style="background:rgba(239,68,68,0.6);">Ja, beenden</button>
+        <button class="glass-button" id="confirmNo" style="background:rgba(255,255,255,0.1);">Abbrechen</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#confirmYes").addEventListener("click", () => { overlay.remove(); onConfirm(); });
+  overlay.querySelector("#confirmNo").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
 // ========== CONFETTI ==========
 function spawnConfetti() {
   const colors = ["#7c3aed", "#a855f7", "#c084fc", "#22c55e", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899"];
@@ -746,7 +766,7 @@ function renderHostOnlyGameView(lobby) {
     </div>
   `);
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
-  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel wirklich beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
+  document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal("Spiel wirklich beenden? Alle Spieler werden entfernt.", async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
 // ========== LOBBY VIEW ==========
@@ -784,12 +804,21 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
       ? `<p>Freiwilliger: <strong>${volunteerPlayer?.name}</strong> <button class="glass-button glass-button-small" id="confirmNarratorBtn">Bestätigen</button></p>`
       : lobby.mode !== "online" ? "<p style='opacity:0.6;'>Kein Freiwilliger gemeldet.</p>" : "";
 
+    const sett = lobby.settings || {};
+    const enabledCount = Object.entries(sett).filter(([k,v]) => v !== false && k !== "Dorfbewohner").length + 2; // +2 for 2 wolves
+    const activeCount = players.length - (confirmedId && lobby.mode !== "online" ? 1 : 0);
+    const roleBalanceClass = enabledCount > activeCount ? 'color:var(--warning)' : 'color:var(--success)';
+    const roleBalanceMsg = enabledCount > activeCount
+      ? `⚠️ Mehr Spezialrollen (${enabledCount}) als Spieler (${activeCount})! Überschüssige werden zufällig entfernt.`
+      : `✅ ${enabledCount} Spezialrollen für ${activeCount} Spieler — Rest wird Dorfbewohner.`;
+
     hostControls = `
       <div style="margin:1.2rem 0; padding:1.2rem; background:rgba(0,0,0,0.25); border-radius:1.2rem;">
         <h3 style="margin-bottom:0.8rem;">⚙️ ${lobby.mode === 'online' ? 'Einstellungen' : 'Host-Einstellungen'}</h3>
         ${narratorConfirmHtml}
         <div style="margin-top:0.8rem;"><strong>Rollen:</strong></div>
         <div class="roles-grid" id="roleToggles">${renderRoleToggles(lobby.settings || {})}</div>
+        <p id="roleBalanceInfo" style="margin-top:0.5rem; font-size:0.8rem; ${roleBalanceClass}">${roleBalanceMsg}</p>
         <button class="glass-button glass-button-small" id="saveSettingsBtn" style="margin-top:0.8rem;">💾 Speichern</button>
       </div>
     `;
@@ -895,7 +924,8 @@ async function startGame(lobby) {
   }
 
   const enabledRoles = [];
-  if (settings.Werwolf !== false) { enabledRoles.push("Werwolf", "Werwolf"); }
+  // Werwolf + Dorfbewohner always forced
+  enabledRoles.push("Werwolf", "Werwolf");
   if (settings.Seherin !== false) enabledRoles.push("Seherin");
   if (settings.Hexe !== false) enabledRoles.push("Hexe");
   if (settings.Amor !== false) enabledRoles.push("Amor");
@@ -906,8 +936,7 @@ async function startGame(lobby) {
   if (settings["Älteste"] !== false) enabledRoles.push("Älteste");
 
   let rolePool = [...enabledRoles];
-  const wolfCount = rolePool.filter(r => r === "Werwolf").length;
-  if (wolfCount < 1) rolePool.push("Werwolf", "Werwolf");
+  // Fill remaining slots with Dorfbewohner (always-on role)
   while (rolePool.length < playersToAssign.length) rolePool.push("Dorfbewohner");
 
   const shuffledRoles = shuffle(rolePool);
@@ -986,7 +1015,7 @@ function renderNarratorDashboard(lobby) {
     else if (phase === "VOTING") await resolveVoting(lobby);
   });
   document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id, lobby.hostId));
-  document.getElementById("endGame")?.addEventListener("click", async () => { if(confirm("Spiel wirklich beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
+  document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal("Spiel wirklich beenden? Alle Spieler werden entfernt.", async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
 // ========== NIGHT PHASE ADVANCE ==========
@@ -1094,9 +1123,13 @@ async function resolveNightDeath(lobby) {
     }
   }
 
+  // Store death names for DAY phase display
+  const deathNames = deaths.map(id => players.find(p => p.id === id)?.name || "?");
+
   await updateDoc(doc(db, "lobbies", lobby.id), {
     players,
     "actionData.nightVictim": null,
+    "actionData.lastNightDeaths": deathNames,
     "actionData.witch": { usedHeal: witch.usedHeal || !!witch.healTarget, usedPoison: witch.usedPoison || !!witch.poisonTarget, healTarget: null, poisonTarget: null },
     "actionData.lastBeschützerTarget": beschützerTarget,
     "actionData.beschützerTarget": null
@@ -1193,7 +1226,7 @@ function renderPlayerGameView(lobby, player) {
 
   const attachBaseListeners = () => {
     document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
-    document.getElementById("endGameHost")?.addEventListener("click", async () => { if(confirm("Spiel wirklich beenden?")){ await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); } });
+    document.getElementById("endGameHost")?.addEventListener("click", async () => { showConfirmModal("Spiel wirklich beenden? Alle Spieler werden entfernt.", async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
   };
 
   if (!player.isAlive) {
@@ -1420,11 +1453,48 @@ function renderPlayerGameView(lobby, player) {
 
   // VOTING
   if (phase === "VOTING") {
-    const aliveTargets = players.filter(p => p.isAlive && p.id !== player.id && p.role !== "ERZÄHLER");
+    const aliveAll = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
+    const aliveTargets = aliveAll.filter(p => p.id !== player.id);
+    const currentVotes = lobby.votes || {};
+    const voteCount = Object.keys(currentVotes).length;
+    const totalVoters = aliveAll.length;
+    const alreadyVoted = !!currentVotes[player.id];
+
+    if (alreadyVoted) {
+      // Show waiting view with live tally
+      const counts = {};
+      Object.values(currentVotes).forEach(v => counts[v] = (counts[v] || 0) + 1);
+      const tallyHtml = Object.entries(counts)
+        .sort(([,a],[,b]) => b - a)
+        .map(([id, c]) => {
+          const name = players.find(p => p.id === id)?.name || "?";
+          const pct = Math.round((c / voteCount) * 100);
+          return `<div style="margin:0.3rem 0;">
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem;"><span>${escapeHtml(name)}</span><span>${c} Stimme${c>1?'n':''}</span></div>
+            <div style="background:rgba(255,255,255,0.1); border-radius:0.5rem; height:6px; margin-top:2px; overflow:hidden;">
+              <div style="width:${pct}%; height:100%; background:var(--purple); border-radius:0.5rem; transition:width 0.3s;"></div>
+            </div>
+          </div>`;
+        }).join("");
+
+      render(`
+        <div class="glass-card">
+          ${baseHeader}
+          <h2>🗳️ Abstimmung läuft</h2>
+          <p style="opacity:0.7;">✅ Du hast abgestimmt. Warte auf die anderen...</p>
+          <div style="margin:1rem 0; font-size:0.85rem; opacity:0.8;">📊 ${voteCount} / ${totalVoters} haben gewählt</div>
+          ${tallyHtml ? `<div style="margin:1rem 0; padding:0.8rem; background:rgba(0,0,0,0.2); border-radius:0.8rem;">${tallyHtml}</div>` : ''}
+        </div>
+      `);
+      attachBaseListeners();
+      return;
+    }
+
     render(`
       <div class="glass-card">
         ${baseHeader}
         <h2>🗳️ Wen hinrichten?</h2>
+        <p style="opacity:0.7; margin-bottom:0.5rem;">📊 ${voteCount} / ${totalVoters} haben bereits gewählt</p>
         <div class="vote-grid" id="voteGrid">${aliveTargets.map(t=>`<div class="vote-card" data-id="${t.id}">${escapeHtml(t.name)}</div>`).join('')}</div>
         <button class="glass-button" id="castVote">🗳️ Abstimmen</button>
       </div>
@@ -1440,8 +1510,6 @@ function renderPlayerGameView(lobby, player) {
         const newVotes = { ...(lobby.votes || {}), [player.id]: sel };
         await updateDoc(doc(db, "lobbies", lobby.id), { votes: newVotes });
         showToast("Stimme abgegeben!", "success");
-        render(`<div class="glass-card">${baseHeader}<p>✅ Abgestimmt. Warte auf die anderen...</p></div>`);
-        attachBaseListeners();
       }
     });
     attachBaseListeners();
@@ -1449,7 +1517,36 @@ function renderPlayerGameView(lobby, player) {
   }
 
   // DAY
-  render(`<div class="glass-card">${baseHeader}<h2>☀️ Tagphase</h2><p>Diskutiert im Chat! Wer könnte ein Werwolf sein?</p></div>`);
+  const lastDeaths = lobby.actionData?.lastNightDeaths || [];
+  const alivePlayers = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
+  const deadPlayers = players.filter(p => !p.isAlive && p.role !== "ERZÄHLER");
+  const deathAnnouncement = lastDeaths.length > 0
+    ? `<div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); border-radius:1rem; padding:1rem; margin:1rem 0;">
+        <strong>☠️ Letzte Nacht starben:</strong> ${lastDeaths.map(n => `<span style="color:var(--danger); font-weight:600;">${escapeHtml(n)}</span>`).join(", ")}
+      </div>`
+    : `<div style="background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.3); border-radius:1rem; padding:1rem; margin:1rem 0;">
+        <strong>🎉 Niemand ist in der Nacht gestorben!</strong>
+      </div>`;
+
+  render(`
+    <div class="glass-card">
+      ${baseHeader}
+      <h2>☀️ Tagphase</h2>
+      ${deathAnnouncement}
+      <div style="margin:1rem 0;">
+        <strong>👥 Lebende (${alivePlayers.length}):</strong>
+        <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.4rem;">
+          ${alivePlayers.map(p => `<span class="player-tag">${escapeHtml(p.name)}</span>`).join("")}
+        </div>
+      </div>
+      ${deadPlayers.length > 0 ? `<div style="margin:0.5rem 0; opacity:0.5;">
+        <strong>⚰️ Tote (${deadPlayers.length}):</strong> ${deadPlayers.map(p => `<s>${escapeHtml(p.name)}</s>`).join(", ")}
+      </div>` : ''}
+      <p style="margin-top:1rem; padding:0.8rem; background:rgba(59,130,246,0.1); border-radius:0.8rem; border:1px solid rgba(59,130,246,0.2);">
+        💬 Diskutiert im Chat! Wer könnte ein Werwolf sein? Der Erzähler wird bald die Abstimmung starten.
+      </p>
+    </div>
+  `);
   attachBaseListeners();
 }
 
@@ -1535,6 +1632,7 @@ function showCreateLobbyModal(type) {
   modalDiv.querySelector("#confirmCreate")?.addEventListener("click", async () => {
     const newSettings = {};
     modalDiv.querySelectorAll(".role-card").forEach(card => { newSettings[card.dataset.role] = card.classList.contains("selected"); });
+    LOCKED_ROLES.forEach(r => newSettings[r] = true);
     try {
       await createLobby(currentUser.name, isPublic, type === "public" ? "online" : localOnlineMode, newSettings);
       modalDiv.remove();
