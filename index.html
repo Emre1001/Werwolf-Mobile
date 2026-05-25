@@ -3,18 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Werwolf Mobile – Synchroner Erzähler-Modus</title>
-  <meta name="description" content="Ultimative Werwolf-PWA mit Echtzeit-Synchronisation, DSGVO-konform.">
+  <title>Werwolf Mobile – Das ultimative Werwolf-Spiel</title>
+  <meta name="description" content="Spiele Werwolf mit Freunden – online oder lokal. 10 Rollen, Echtzeit-Chat, automatischer Erzähler. PWA, DSGVO-konform.">
+  <meta name="keywords" content="Werwolf, Werewolf, Mobile, Online, Multiplayer, Kartenspiel, PWA">
+  <meta name="author" content="Emre Asik">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0a0f2a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle fill='%237c3aed' cx='50' cy='50' r='50'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white'%3E🐺%3C/text%3E%3C/svg%3E">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <meta property="og:title" content="Werwolf Mobile">
+  <meta property="og:description" content="Das ultimative Werwolf-Spiel für dein Handy – 10 Rollen, Echtzeit-Chat, automatischer Erzähler">
+  <meta property="og:type" content="website">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <canvas id="particles"></canvas>
+
   <div id="app" class="glass-app">
     <div class="bg-animation"></div>
     <div class="ui-container" id="ui-container">
@@ -22,7 +30,10 @@
     </div>
   </div>
 
-  <!-- Chat Widget (persistent, außerhalb ui-container) -->
+  <button id="guide-btn" class="guide-btn" title="Spielanleitung">
+    <i class="fas fa-book-open"></i>
+  </button>
+
   <div id="chat-container" class="chat-container" style="display: none;">
     <div class="chat-header" id="chat-header">
       <span id="chat-title">💬 Chat</span>
@@ -37,62 +48,73 @@
     </div>
   </div>
 
-  <!-- Consent-Popup (zentral, wie Homescreen) -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <div id="phase-overlay" class="phase-overlay">
+    <div class="phase-overlay-icon" id="phase-overlay-icon"></div>
+    <div class="phase-overlay-text" id="phase-overlay-text"></div>
+  </div>
+
   <div id="consent-modal" class="modal" style="display: none;">
     <div class="modal-content glass-card" style="max-width: 450px; text-align: center;">
-      <div style="margin-bottom: 1rem;">
-        <i class="fas fa-shield-alt" style="font-size: 3rem; color: #c084fc;"></i>
+      <div class="consent-icon-wrap">
+        <i class="fas fa-shield-alt"></i>
       </div>
-      <h3 style="margin-bottom: 0.5rem;">Datenschutz-Einwilligung</h3>
-      <p style="margin-bottom: 1rem; line-height: 1.5;">
+      <h3>Datenschutz-Einwilligung</h3>
+      <p style="margin-bottom: 1.2rem; line-height: 1.6; opacity: 0.85;">
         Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen.
         Diese Daten sind technisch notwendig. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
       </p>
       <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <button id="accept-consent" class="glass-button" style="background: #22c55e;">Akzeptieren</button>
-        <button id="reject-consent" class="glass-button" style="background: #ef4444;">Ablehnen</button>
+        <button id="accept-consent" class="glass-button btn-success">Akzeptieren</button>
+        <button id="reject-consent" class="glass-button btn-danger">Ablehnen</button>
       </div>
       <div style="margin-top: 1.5rem; font-size: 0.85rem;">
-        <a href="#" id="show-impressum" style="color: #c084fc;">Impressum</a> | 
-        <a href="#" id="show-datenschutz" style="color: #c084fc;">Datenschutzerklärung</a>
+        <a href="#" id="show-impressum" class="legal-link">Impressum</a> |
+        <a href="#" id="show-datenschutz" class="legal-link">Datenschutzerklärung</a>
       </div>
     </div>
   </div>
 
-  <!-- Modal für Impressum & Datenschutz -->
   <div id="legal-modal" class="modal" style="display: none;">
     <div class="modal-content glass-card" style="max-width: 550px; max-height: 80vh; overflow-y: auto;">
       <h3 id="legal-modal-title">Impressum</h3>
-      <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.5;"></div>
+      <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.6;"></div>
       <button class="glass-button" id="close-legal-modal">Schließen</button>
     </div>
   </div>
 
-  <!-- Offline-Hinweis (zentral) -->
   <div id="offline-modal" class="modal" style="display: none;">
     <div class="modal-content glass-card" style="max-width: 400px; text-align: center;">
-      <i class="fas fa-wifi" style="font-size: 3rem; color: #ef4444; margin-bottom: 1rem;"></i>
+      <div class="offline-icon-wrap">
+        <i class="fas fa-wifi-slash"></i>
+      </div>
       <h3>Keine Internetverbindung</h3>
-      <p style="margin: 1rem 0;">Bitte überprüfen Sie Ihre Netzwerkverbindung und versuchen Sie es erneut.</p>
+      <p style="margin: 1rem 0; opacity: 0.8;">Bitte überprüfe deine Netzwerkverbindung und versuche es erneut.</p>
       <button class="glass-button" id="offline-retry">Erneut versuchen</button>
     </div>
   </div>
 
-  <!-- Rollen-Anzeige (nach Spielstart) -->
   <div id="role-display" class="role-display" style="display: none;">
     <div class="role-display-content glass-card">
-      <i class="fas fa-mask" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
-      <h3 id="role-name">Deine Rolle</h3>
-      <p id="role-description" style="margin-top: 0.5rem;"></p>
-      <div class="role-timer" id="role-timer">10</div>
+      <div class="role-reveal-card">
+        <div class="role-reveal-icon" id="role-reveal-icon">
+          <i class="fas fa-mask"></i>
+        </div>
+        <h3 id="role-name">Deine Rolle</h3>
+        <p id="role-description"></p>
+        <div class="role-timer-bar"><div class="role-timer-fill" id="role-timer-fill"></div></div>
+        <div class="role-timer" id="role-timer">10</div>
+      </div>
     </div>
   </div>
 
-  <!-- Installations-Prompt (PWA) -->
-  <div id="installPrompt" style="display:none; position:fixed; bottom:20px; left:20px; right:20px; z-index:1000;" class="glass-card">
-    <p style="margin-bottom:10px;"><i class="fas fa-download"></i> App installieren für bestes Erlebnis</p>
-    <button id="installBtn" class="glass-button">Installieren</button>
-    <button id="closeInstallBtn" class="glass-button" style="background:rgba(0,0,0,0.5);">Später</button>
+  <div id="installPrompt" style="display:none;" class="install-prompt glass-card">
+    <p><i class="fas fa-download"></i> App installieren für das beste Erlebnis</p>
+    <div style="display:flex; gap:0.8rem;">
+      <button id="installBtn" class="glass-button">Installieren</button>
+      <button id="closeInstallBtn" class="glass-button" style="background:rgba(255,255,255,0.1);">Später</button>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>
