@@ -8,7 +8,16 @@
   <meta name="keywords" content="Werwolf, Werewolf, Mobile, Online, Multiplayer, Kartenspiel, PWA">
   <meta name="author" content="Emre Asik">
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0a0f2a">
+  <meta name="theme-color" content="#0a1733">
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("ww_theme");
+        var sys = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", saved || sys);
+      } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="icon.png">
@@ -30,6 +39,12 @@
     </div>
   </div>
 
+  <select id="lang-select" class="lang-select" aria-label="Language / Sprache"></select>
+
+  <button id="theme-toggle" class="theme-toggle" title="Hell-/Dunkelmodus" aria-label="Theme wechseln">
+    <i class="fas fa-moon"></i>
+  </button>
+
   <button id="guide-btn" class="guide-btn" title="Spielanleitung">
     <i class="fas fa-book-open"></i>
   </button>
@@ -42,7 +57,7 @@
     <div class="chat-body" id="chat-body">
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input-area">
-        <input type="text" id="chat-input" placeholder="Nachricht..." maxlength="200" autocomplete="off">
+        <input type="text" id="chat-input" placeholder="Nachricht..." data-i18n-ph="chatPlaceholder" maxlength="200" autocomplete="off">
         <button class="chat-send-btn" id="chat-send"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
@@ -60,18 +75,18 @@
       <div class="consent-icon-wrap">
         <i class="fas fa-shield-alt"></i>
       </div>
-      <h3>Datenschutz-Einwilligung</h3>
-      <p style="margin-bottom: 1.2rem; line-height: 1.6; opacity: 0.85;">
+      <h3 data-i18n="consentTitle">Datenschutz-Einwilligung</h3>
+      <p data-i18n="consentBody" style="margin-bottom: 1.2rem; line-height: 1.6; opacity: 0.85;">
         Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen.
         Diese Daten sind technisch notwendig. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
       </p>
       <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <button id="accept-consent" class="glass-button btn-success">Akzeptieren</button>
-        <button id="reject-consent" class="glass-button btn-danger">Ablehnen</button>
+        <button id="accept-consent" class="glass-button btn-success" data-i18n="accept">Akzeptieren</button>
+        <button id="reject-consent" class="glass-button btn-danger" data-i18n="reject">Ablehnen</button>
       </div>
       <div style="margin-top: 1.5rem; font-size: 0.85rem;">
-        <a href="#" id="show-impressum" class="legal-link">Impressum</a> |
-        <a href="#" id="show-datenschutz" class="legal-link">Datenschutzerklärung</a>
+        <a href="#" id="show-impressum" class="legal-link" data-i18n="imprint">Impressum</a> |
+        <a href="#" id="show-datenschutz" class="legal-link" data-i18n="privacy">Datenschutzerklärung</a>
       </div>
     </div>
   </div>
@@ -80,7 +95,7 @@
     <div class="modal-content glass-card" style="max-width: 550px; max-height: 80vh; overflow-y: auto;">
       <h3 id="legal-modal-title">Impressum</h3>
       <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.6;"></div>
-      <button class="glass-button" id="close-legal-modal">Schließen</button>
+      <button class="glass-button" id="close-legal-modal" data-i18n="close">Schließen</button>
     </div>
   </div>
 
@@ -89,9 +104,9 @@
       <div class="offline-icon-wrap">
         <i class="fas fa-wifi-slash"></i>
       </div>
-      <h3>Keine Internetverbindung</h3>
-      <p style="margin: 1rem 0; opacity: 0.8;">Bitte überprüfe deine Netzwerkverbindung und versuche es erneut.</p>
-      <button class="glass-button" id="offline-retry">Erneut versuchen</button>
+      <h3 data-i18n="offlineTitle">Keine Internetverbindung</h3>
+      <p data-i18n="offlineBody" style="margin: 1rem 0; opacity: 0.8;">Bitte überprüfe deine Netzwerkverbindung und versuche es erneut.</p>
+      <button class="glass-button" id="offline-retry" data-i18n="retry">Erneut versuchen</button>
     </div>
   </div>
 
@@ -101,7 +116,7 @@
         <div class="role-reveal-icon" id="role-reveal-icon">
           <i class="fas fa-mask"></i>
         </div>
-        <h3 id="role-name">Deine Rolle</h3>
+        <h3 id="role-name" data-i18n="yourRole">Deine Rolle</h3>
         <p id="role-description"></p>
         <div class="role-timer-bar"><div class="role-timer-fill" id="role-timer-fill"></div></div>
         <div class="role-timer" id="role-timer">10</div>
@@ -110,10 +125,10 @@
   </div>
 
   <div id="installPrompt" style="display:none;" class="install-prompt glass-card">
-    <p><i class="fas fa-download"></i> App installieren für das beste Erlebnis</p>
+    <p><i class="fas fa-download"></i> <span data-i18n="installText">App installieren für das beste Erlebnis</span></p>
     <div style="display:flex; gap:0.8rem;">
-      <button id="installBtn" class="glass-button">Installieren</button>
-      <button id="closeInstallBtn" class="glass-button" style="background:rgba(255,255,255,0.1);">Später</button>
+      <button id="installBtn" class="glass-button" data-i18n="install">Installieren</button>
+      <button id="closeInstallBtn" class="glass-button" style="background:rgba(255,255,255,0.1);" data-i18n="later">Später</button>
     </div>
   </div>
 
