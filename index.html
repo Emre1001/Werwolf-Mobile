@@ -130,11 +130,30 @@
     </div>
   </div>
 
-  <div id="installPrompt" style="display:none;" class="install-prompt glass-card">
-    <p><i class="fas fa-download"></i> <span data-i18n="installText">App installieren für das beste Erlebnis</span></p>
-    <div style="display:flex; gap:0.8rem;">
-      <button id="installBtn" class="glass-button" data-i18n="install">Installieren</button>
-      <button id="closeInstallBtn" class="glass-button" style="background:rgba(255,255,255,0.1);" data-i18n="later">Später</button>
+  <div id="install-bar" class="install-bar" role="region" aria-label="App installieren">
+    <img src="icon-192.png" alt="" class="install-bar-icon">
+    <div class="install-bar-text">
+      <strong data-i18n="installBarTitle">Werwolf als App installieren</strong>
+      <span data-i18n="installBarSub">Vollbild, schneller Start & Offline-Modus</span>
+    </div>
+    <button id="install-bar-btn" class="install-bar-btn glass-button" data-i18n="install">Installieren</button>
+    <button id="install-bar-close" class="install-bar-close" aria-label="Schließen">&times;</button>
+  </div>
+
+  <div id="ios-install-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ios-install-title">
+    <div class="modal-content glass-card" style="max-width: 420px; text-align: center;">
+      <div class="consent-icon-wrap">
+        <i class="fas fa-mobile-screen-button"></i>
+      </div>
+      <h3 id="ios-install-title" data-i18n="iosInstallTitle">Zum Home-Bildschirm hinzufügen</h3>
+      <p data-i18n="iosInstallBody" style="margin: 1rem 0; opacity: 0.85; line-height: 1.6;">
+        So installierst du Werwolf auf deinem iPhone oder iPad:
+      </p>
+      <div class="ios-install-steps">
+        <div class="ios-install-step"><i class="fas fa-arrow-up-from-bracket"></i> <span data-i18n="iosStep1">Tippe unten in Safari auf das Teilen-Symbol</span></div>
+        <div class="ios-install-step"><i class="fas fa-square-plus"></i> <span data-i18n="iosStep2">Wähle „Zum Home-Bildschirm“</span></div>
+      </div>
+      <button class="glass-button" id="ios-install-close" data-i18n="close">Schließen</button>
     </div>
   </div>
 

@@ -899,6 +899,8 @@ input:checked + .slider:before { transform: translateX(24px); }
 
 @media (max-width: 760px) {
   .lang-select { max-width: 3.6rem; font-size: 0.8rem; padding: 0 0.4rem; }
+  .install-bar-text span { display: none; }
+  .install-bar { gap: 0.6rem; padding-left: 0.8rem; padding-right: 0.8rem; }
 }
 
 .guide-btn:hover, .theme-toggle:hover {
@@ -1186,19 +1188,99 @@ input:checked + .slider:before { transform: translateX(24px); }
   75% { transform: translateX(-4px); }
 }
 
-/* ========== INSTALL PROMPT ========== */
-.install-prompt {
+/* ========== INSTALL BAR (top, iOS + Android) ========== */
+.install-bar {
   position: fixed;
-  bottom: 20px;
-  bottom: calc(20px + env(safe-area-inset-bottom));
-  left: 20px;
-  right: 20px;
-  z-index: 950; /* below modals (1000) so it never overlays the consent/legal dialogs */
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 960; /* above floating buttons (800), below modals (1000) */
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 0.8rem;
+  padding: 0.6rem 1rem;
+  padding-top: calc(0.6rem + env(safe-area-inset-top));
+  background: rgba(10, 23, 51, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--card-border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  transform: translateY(-130%);
+  transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  pointer-events: none;
 }
+.install-bar.show {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.install-bar-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+.install-bar-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+  flex: 1;
+}
+.install-bar-text strong { font-size: 0.92rem; }
+.install-bar-text span {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.install-bar-btn {
+  flex-shrink: 0;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+}
+.install-bar-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  opacity: 0.6;
+  font-size: 1.6rem;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+.install-bar-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.1); }
+
+/* While the bar is open, push the floating top controls below it so they don't overlap. */
+html.install-bar-open .guide-btn,
+html.install-bar-open .theme-toggle,
+html.install-bar-open .lang-select {
+  top: calc(1rem + env(safe-area-inset-top) + 60px);
+}
+
+/* iOS install instruction steps */
+.ios-install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin: 1.2rem 0;
+  text-align: left;
+}
+.ios-install-step {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--card-border);
+  border-radius: 0.7rem;
+  font-size: 0.9rem;
+}
+.ios-install-step i { color: var(--accent-glow); font-size: 1.2rem; width: 1.4rem; text-align: center; }
 
 /* ========== CONSENT / OFFLINE ICONS ========== */
 .consent-icon-wrap,

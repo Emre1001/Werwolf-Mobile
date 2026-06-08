@@ -259,6 +259,25 @@ Werwolf-Mobile/
 - **z-index** → Install-Banner überlagert keine Dialoge mehr
 - **Barrierefreiheit** → `aria-label`s, `role="dialog"` an Modals, `<noscript>`-Fallback
 
+## 🐛 Release-Bugfixes (v2.2)
+
+- **Liebespaar-Sieg** → Ein gemischtes Liebespaar (Werwolf + Dorf) gewinnt jetzt als eigenes Team, wenn nur noch die beiden leben
+- **Unentschieden** → Sterben alle (z. B. gegenseitiger Tod), endet das Spiel als Unentschieden statt einzufrieren
+- **Mehrere Jäger** → Sterben in einer Nacht zwei Jäger, schießen beide nacheinander (Jäger-Warteschlange)
+- **Host-Failover** → Stürzt der Host hart ab (kein „Verlassen"), übernimmt automatisch der nächste Spieler – kein eingefrorenes Online-Spiel mehr
+- **XSS-Schutz** → Spielernamen in Auswahl-Dialogen werden jetzt escaped
+- **Faires Werwolf-Patt** → Bei Stimmengleichheit der Wölfe entscheidet der Zufall, nicht die Klick-Reihenfolge
+- **Sofortiges Feedback** → Kleines Mädchen sieht nach dem Spähen sofort eine Warte-/Ergebnis-Ansicht
+
+## 📲 Installations-Leiste (iOS & Android)
+
+Eine elegante Leiste oben fragt, ob man Werwolf als App installieren möchte:
+
+- **Android/Chrome:** Ein-Klick-Installation über das native `beforeinstallprompt`
+- **iOS/Safari:** Schritt-für-Schritt-Anleitung („Teilen → Zum Home-Bildschirm"), da iOS keine automatische Installation erlaubt
+- Wird nicht angezeigt, wenn die App bereits installiert ist (Standalone-Erkennung)
+- „Schließen" merkt sich die Entscheidung für 7 Tage
+
 <br>
 
 <details>
