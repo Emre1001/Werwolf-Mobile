@@ -33,7 +33,14 @@ function rejectConsent() { showToast(t("consentNeeded"), "warning"); }
 let isOnline = navigator.onLine;
 function showOfflineModal() { document.getElementById("offline-modal").style.display = "flex"; }
 function hideOfflineModal() { document.getElementById("offline-modal").style.display = "none"; }
-window.addEventListener("online", () => { isOnline = true; hideOfflineModal(); if(consentGiven && firebaseReady) initApp(); });
+window.addEventListener("online", () => {
+  isOnline = true;
+  hideOfflineModal();
+  // Don't re-init while the player is in an active lobby — that would tear them out of the
+  // game into the main menu and leave the old listeners/intervals running. The Firestore
+  // listener reconnects on its own.
+  if (consentGiven && firebaseReady && !currentLobbyId) initApp();
+});
 window.addEventListener("offline", () => { isOnline = false; showOfflineModal(); });
 
 // ========== LEGAL ==========
@@ -54,6 +61,7 @@ let unsubscribeLobby = null;
 let heartbeatInterval = null;
 let deferredPrompt = null;
 let roleDisplayTimeout = null;
+let roleDisplayInterval = null;
 let lastStateFingerprint = null;
 let unsubscribeChat = null;
 let chatMessages = [];
@@ -419,13 +427,15 @@ function showRoleFor10Seconds(role, description) {
     timerFill.style.width = "0%";
   });
 
-  if (roleDisplayTimeout) clearInterval(roleDisplayTimeout);
-  const interval = setInterval(() => {
+  // Clear any previous reveal timers so an old countdown can't keep writing into the DOM.
+  if (roleDisplayTimeout) clearTimeout(roleDisplayTimeout);
+  if (roleDisplayInterval) clearInterval(roleDisplayInterval);
+  roleDisplayInterval = setInterval(() => {
     seconds--;
     timerSpan.innerText = seconds;
-    if (seconds <= 0) { clearInterval(interval); roleDisplay.style.display = "none"; }
+    if (seconds <= 0) { clearInterval(roleDisplayInterval); roleDisplay.style.display = "none"; }
   }, 1000);
-  roleDisplayTimeout = setTimeout(() => { clearInterval(interval); roleDisplay.style.display = "none"; }, 10000);
+  roleDisplayTimeout = setTimeout(() => { clearInterval(roleDisplayInterval); roleDisplay.style.display = "none"; }, 10000);
 }
 
 // ========== SHUFFLE (Fisher-Yates) ==========
@@ -571,8 +581,11 @@ async function leaveLobby(lobbyId, playerId, hostId) {
   if (!lobbySnap.exists()) return;
   const lobby = lobbySnap.data();
   let newPlayers = lobby.players.filter(p => p.id !== playerId);
-  let newHostId = hostId;
-  if (hostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
+  // Derive the host from the freshly loaded lobby, not the (possibly null) caller argument,
+  // so the leaving host always hands off and the lobby never ends up host-less and frozen.
+  const currentHostId = lobby.hostId;
+  let newHostId = currentHostId;
+  if (currentHostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
   if (newPlayers.length === 0) await deleteDoc(lobbyRef);
   else await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
   if (playerId === currentUser.id) {
@@ -778,10 +791,12 @@ async function checkAutomaticAdvance(lobby) {
     else if (narratorStep === "BESCHÜTZER") done = !hasAliveRole(players, "Beschützer") || actionData.beschützerDone;
     else if (narratorStep === "WEREWOLF") {
       const aliveWolves = players.filter(p => p.isAlive && p.role === "Werwolf");
-      done = aliveWolves.length === 0 || Object.keys(actionData.werewolfVotes || {}).length >= aliveWolves.length;
+      const wolfIds = new Set(aliveWolves.map(p => p.id));
+      const wolfVoteCount = Object.keys(actionData.werewolfVotes || {}).filter(id => wolfIds.has(id)).length;
+      done = aliveWolves.length === 0 || wolfVoteCount >= aliveWolves.length;
     }
     else if (narratorStep === "SMALL_GIRL") done = !hasAliveRole(players, "Kleines Mädchen") || actionData.smallGirlPeeked;
-    else if (narratorStep === "SEER") done = !hasAliveRole(players, "Seherin") || actionData.seerTarget;
+    else if (narratorStep === "SEER") done = !hasAliveRole(players, "Seherin") || !!actionData.seerTarget;
     else if (narratorStep === "WITCH") done = !hasAliveRole(players, "Hexe") || actionData.witchDone;
     else done = true;
     if (done || timedOut) await runLocked(() => advanceNightPhase(lobby));
@@ -789,7 +804,8 @@ async function checkAutomaticAdvance(lobby) {
     if (timedOut) await runLocked(() => startVoting(lobby));
   } else if (phase === "VOTING") {
     const alivePlayers = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
-    const voteCount = Object.keys(votes || {}).length;
+    const aliveIds = new Set(alivePlayers.map(p => p.id));
+    const voteCount = Object.keys(votes || {}).filter(id => aliveIds.has(id)).length;
     if (voteCount >= alivePlayers.length || timedOut) await runLocked(() => resolveVoting(lobby));
   } else if (phase === "HUNTER") {
     if (timedOut) await runLocked(() => resolveHunterShot(lobby, null));
@@ -1033,21 +1049,31 @@ async function startGame(lobby) {
     return;
   }
 
-  const enabledRoles = [];
-  // Werwolf + Dorfbewohner always forced
-  enabledRoles.push("Werwolf", "Werwolf");
-  if (settings.Seherin !== false) enabledRoles.push("Seherin");
-  if (settings.Hexe !== false) enabledRoles.push("Hexe");
-  if (settings.Amor !== false) enabledRoles.push("Amor");
-  if (settings.Jäger !== false) enabledRoles.push("Jäger");
-  if (settings["Kleines Mädchen"] !== false) enabledRoles.push("Kleines Mädchen");
-  if (settings.Beschützer !== false) enabledRoles.push("Beschützer");
-  if (settings.Prinz !== false) enabledRoles.push("Prinz");
-  if (settings["Älteste"] !== false) enabledRoles.push("Älteste");
+  const numPlayers = playersToAssign.length;
 
-  let rolePool = [...enabledRoles];
-  // Fill remaining slots with Dorfbewohner (always-on role)
-  while (rolePool.length < playersToAssign.length) rolePool.push("Dorfbewohner");
+  // Optional special roles (one each if enabled).
+  const optionalRoles = [];
+  if (settings.Seherin !== false) optionalRoles.push("Seherin");
+  if (settings.Hexe !== false) optionalRoles.push("Hexe");
+  if (settings.Amor !== false) optionalRoles.push("Amor");
+  if (settings.Jäger !== false) optionalRoles.push("Jäger");
+  if (settings["Kleines Mädchen"] !== false) optionalRoles.push("Kleines Mädchen");
+  if (settings.Beschützer !== false) optionalRoles.push("Beschützer");
+  if (settings.Prinz !== false) optionalRoles.push("Prinz");
+  if (settings["Älteste"] !== false) optionalRoles.push("Älteste");
+
+  // Build a pool of EXACTLY numPlayers roles. Werewolves are mandatory and added first so they
+  // can never be squeezed out when more roles are enabled than there are players (which previously
+  // could produce a game with zero werewolves → instant village win).
+  const wolfCount = Math.min(2, numPlayers);
+  const rolePool = [];
+  for (let i = 0; i < wolfCount; i++) rolePool.push("Werwolf");
+  // Add optional roles in random order, only as many as fit, so dropped roles are random and fair.
+  for (const r of shuffle(optionalRoles)) {
+    if (rolePool.length >= numPlayers) break;
+    rolePool.push(r);
+  }
+  while (rolePool.length < numPlayers) rolePool.push("Dorfbewohner");
 
   const shuffledRoles = shuffle(rolePool);
 
@@ -1183,8 +1209,13 @@ async function advanceNightPhase(lobby) {
 
 async function resolveWerewolfKill(lobby) {
   const votes = lobby.actionData?.werewolfVotes || {};
+  const aliveWolfIds = new Set(lobby.players.filter(p => p.isAlive && p.role === "Werwolf").map(p => p.id));
+  const aliveIds = new Set(lobby.players.filter(p => p.isAlive).map(p => p.id));
   const counts = {};
-  Object.values(votes).forEach(v => counts[v] = (counts[v] || 0) + 1);
+  // Only count votes cast by living wolves and targeting a living player.
+  Object.entries(votes).forEach(([voter, target]) => {
+    if (aliveWolfIds.has(voter) && aliveIds.has(target)) counts[target] = (counts[target] || 0) + 1;
+  });
   let maxId = null, max = 0;
   for (const [id, c] of Object.entries(counts)) if (c > max) { max = c; maxId = id; }
   if (maxId) {
@@ -1288,8 +1319,12 @@ async function goToNightFromVote(lobby, players, extra = {}) {
 
 async function resolveVoting(lobby) {
   const votes = lobby.votes || {};
+  const aliveIds = new Set(lobby.players.filter(p => p.isAlive && p.role !== "ERZÄHLER").map(p => p.id));
   const counts = {};
-  Object.values(votes).forEach(v => counts[v] = (counts[v] || 0) + 1);
+  // Only count votes from living players targeting a living player (ignore leavers' stale votes).
+  Object.entries(votes).forEach(([voter, target]) => {
+    if (aliveIds.has(voter) && aliveIds.has(target)) counts[target] = (counts[target] || 0) + 1;
+  });
 
   // Find the clear leader. A tie (or no votes) means nobody is executed.
   let maxId = null, max = 0, tie = false;
@@ -1559,8 +1594,8 @@ function renderPlayerGameView(lobby, player) {
       }));
       document.getElementById("submitWolfVote")?.addEventListener("click", async () => {
         if (sel) {
-          const cur = { ...(lobby.actionData?.werewolfVotes || {}), [player.id]: sel };
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.werewolfVotes": cur });
+          // Field-level write so simultaneous wolf votes don't overwrite each other.
+          await updateDoc(doc(db, "lobbies", lobby.id), { [`actionData.werewolfVotes.${player.id}`]: sel });
           showToast(t("wolfVoted"), "success");
           render(`<div class="glass-card">${baseHeader}<p>${t("wolfWait")}</p></div>`);
           attachBaseListeners();
@@ -1625,6 +1660,7 @@ function renderPlayerGameView(lobby, player) {
       document.getElementById("seerSubmit")?.addEventListener("click", async () => {
         if (sel) {
           const target = players.find(p => p.id === sel);
+          if (!target) { showToast(t("playerLeft"), "error"); return; }
           showToast(t("seerResult", { name: target.name, role: roleName(target.role) }), "info");
           await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.seerTarget": sel });
           render(`<div class="glass-card">${baseHeader}<p>🔮 ${escapeHtml(target.name)}: <strong>${roleName(target.role)}</strong></p></div>`);
@@ -1740,8 +1776,8 @@ function renderPlayerGameView(lobby, player) {
     }));
     document.getElementById("castVote")?.addEventListener("click", async () => {
       if (sel) {
-        const newVotes = { ...(lobby.votes || {}), [player.id]: sel };
-        await updateDoc(doc(db, "lobbies", lobby.id), { votes: newVotes });
+        // Field-level write so simultaneous votes don't overwrite each other.
+        await updateDoc(doc(db, "lobbies", lobby.id), { [`votes.${player.id}`]: sel });
         showToast(t("voteCast"), "success");
       }
     });

@@ -84,6 +84,7 @@
 
 body {
   min-height: 100vh;
+  min-height: 100dvh; /* avoids content being cut off by mobile browser UI bars */
   background: radial-gradient(circle at 20% 30%, var(--bg-1), var(--bg-0));
   color: var(--text);
   overflow-x: hidden;
@@ -106,6 +107,7 @@ body {
   position: relative;
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -830,6 +832,7 @@ input:checked + .slider:before { transform: translateX(24px); }
 .guide-btn, .theme-toggle {
   position: fixed;
   top: 1rem;
+  top: calc(1rem + env(safe-area-inset-top)); /* clear the notch/status bar with viewport-fit=cover */
   z-index: 800;
   width: 44px;
   height: 44px;
@@ -855,6 +858,7 @@ input:checked + .slider:before { transform: translateX(24px); }
 .lang-select {
   position: fixed;
   top: 1rem;
+  top: calc(1rem + env(safe-area-inset-top));
   right: 7.4rem;
   z-index: 800;
   height: 44px;
@@ -873,8 +877,9 @@ input:checked + .slider:before { transform: translateX(24px); }
   outline: none;
   transition: all 0.25s ease;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-  appearance: none;
+  -moz-appearance: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 .lang-select:hover {
@@ -1001,6 +1006,7 @@ input:checked + .slider:before { transform: translateX(24px); }
 .chat-container {
   position: fixed;
   bottom: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom)); /* clear the home indicator */
   right: 1rem;
   width: 340px;
   max-height: 420px;
@@ -1184,9 +1190,10 @@ input:checked + .slider:before { transform: translateX(24px); }
 .install-prompt {
   position: fixed;
   bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   left: 20px;
   right: 20px;
-  z-index: 1000;
+  z-index: 950; /* below modals (1000) so it never overlays the consent/legal dialogs */
   display: flex;
   align-items: center;
   justify-content: space-between;

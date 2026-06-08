@@ -245,6 +245,20 @@ Werwolf-Mobile/
 - **Doppelte Nacht-Tode** → Korrekte Auflösung der Angriffe
 - **Jäger-Rache** → Interaktive Auswahl statt Text-Eingabe
 
+## 🐛 Bugfixes (v2.1)
+
+- **Garantierte Werwölfe** → Bei mehr aktivierten Rollen als Spielern werden Werwölfe nie mehr „weggeshuffelt" (kein sofortiger Dorf-Sieg)
+- **Race-sichere Abstimmung** → Werwolf- und Tages-Stimmen überschreiben sich bei gleichzeitigem Klick nicht mehr (feldweise Firestore-Writes)
+- **Verwaiste Stimmen** → Stimmen von/auf Spieler, die das Spiel verlassen haben, werden ignoriert
+- **Host-Übergabe** → Verlässt der Host die Seite, wird der Host korrekt weitergegeben (Lobby friert nicht mehr ein)
+- **Reconnect** → Wiederverbinden wirft nicht mehr aus einer laufenden Partie ins Hauptmenü
+- **Timer-Leak** → Rollen-Reveal-Countdown räumt alte Timer korrekt auf (`clearTimeout`/`clearInterval`)
+- **Service Worker** → Cacht keine POST-/Cross-Origin-Requests mehr (kein Crash), Offline-Fallback auf App-Shell
+- **PWA-Installierbarkeit** → Echte 192×192- und 512×512-PNG-Icons, konsistente `start_url`/`scope`/`theme_color`
+- **Mobile Layout** → `100dvh` + `safe-area-insets` gegen abgeschnittene Inhalte unter Notch/Browser-Leisten
+- **z-index** → Install-Banner überlagert keine Dialoge mehr
+- **Barrierefreiheit** → `aria-label`s, `role="dialog"` an Modals, `<noscript>`-Fallback
+
 <br>
 
 <details>
