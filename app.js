@@ -1,6 +1,6 @@
 // app.js – Werwolf Mobile v2.0 | Komplettes Rewrite mit Bugfixes & neuen Features
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc, addDoc, orderBy, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js";
 
 // ========== FIREBASE ==========
@@ -22,18 +22,30 @@ try {
 } catch(e) { console.error("Firebase init error", e); }
 
 // ========== CONSENT ==========
+// localStorage can throw (storage disabled, some private modes) — a top-level throw
+// would prevent the whole module from loading, so every access goes through these.
+function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function storageSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
+
 const CONSENT_KEY = "werwolf_consent_given";
-let consentGiven = localStorage.getItem(CONSENT_KEY) === "true";
+let consentGiven = storageGet(CONSENT_KEY) === "true";
 
 function showConsentModal() { document.getElementById("consent-modal").style.display = "flex"; }
-function acceptConsent() { localStorage.setItem(CONSENT_KEY, "true"); consentGiven = true; document.getElementById("consent-modal").style.display = "none"; initApp(); }
+function acceptConsent() { storageSet(CONSENT_KEY, "true"); consentGiven = true; document.getElementById("consent-modal").style.display = "none"; initApp(); setupInstallBanner(); }
 function rejectConsent() { showToast(t("consentNeeded"), "warning"); }
 
 // ========== OFFLINE ==========
 let isOnline = navigator.onLine;
 function showOfflineModal() { document.getElementById("offline-modal").style.display = "flex"; }
 function hideOfflineModal() { document.getElementById("offline-modal").style.display = "none"; }
-window.addEventListener("online", () => { isOnline = true; hideOfflineModal(); if(consentGiven && firebaseReady) initApp(); });
+window.addEventListener("online", () => {
+  isOnline = true;
+  hideOfflineModal();
+  // Don't re-init while the player is in an active lobby — that would tear them out of the
+  // game into the main menu and leave the old listeners/intervals running. The Firestore
+  // listener reconnects on its own.
+  if (consentGiven && firebaseReady && !currentLobbyId) initApp();
+});
 window.addEventListener("offline", () => { isOnline = false; showOfflineModal(); });
 
 // ========== LEGAL ==========
@@ -44,16 +56,17 @@ function closeLegalModal() { document.getElementById("legal-modal").style.displa
 // ========== GLOBAL STATE ==========
 function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36); }
 
-let deviceId = localStorage.getItem("ww_device_id");
-if (!deviceId && consentGiven) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
-let currentUser = { id: localStorage.getItem("ww_player_id") || uuid(), name: "", deviceId };
-if (consentGiven) localStorage.setItem("ww_player_id", currentUser.id);
+let deviceId = storageGet("ww_device_id");
+if (!deviceId && consentGiven) { deviceId = uuid(); storageSet("ww_device_id", deviceId); }
+let currentUser = { id: storageGet("ww_player_id") || uuid(), name: "", deviceId };
+if (consentGiven) storageSet("ww_player_id", currentUser.id);
 
 let currentLobbyId = null;
 let unsubscribeLobby = null;
 let heartbeatInterval = null;
 let deferredPrompt = null;
 let roleDisplayTimeout = null;
+let roleDisplayInterval = null;
 let lastStateFingerprint = null;
 let unsubscribeChat = null;
 let chatMessages = [];
@@ -307,7 +320,7 @@ function showChoiceModal(title, options, callback) {
     <div class="glass-card" style="max-width:420px; width:90%; padding:2rem;">
       <h3 style="text-align:center;">${title}</h3>
       <div class="vote-grid" style="margin:1.2rem 0;">
-        ${options.map(o => `<div class="vote-card choice-opt" data-value="${o.id}">${o.name}</div>`).join("")}
+        ${options.map(o => `<div class="vote-card choice-opt" data-value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</div>`).join("")}
       </div>
       <div style="text-align:center;">
         <button class="glass-button" id="choiceConfirm" disabled>${t("confirm")}</button>
@@ -419,13 +432,15 @@ function showRoleFor10Seconds(role, description) {
     timerFill.style.width = "0%";
   });
 
-  if (roleDisplayTimeout) clearInterval(roleDisplayTimeout);
-  const interval = setInterval(() => {
+  // Clear any previous reveal timers so an old countdown can't keep writing into the DOM.
+  if (roleDisplayTimeout) clearTimeout(roleDisplayTimeout);
+  if (roleDisplayInterval) clearInterval(roleDisplayInterval);
+  roleDisplayInterval = setInterval(() => {
     seconds--;
     timerSpan.innerText = seconds;
-    if (seconds <= 0) { clearInterval(interval); roleDisplay.style.display = "none"; }
+    if (seconds <= 0) { clearInterval(roleDisplayInterval); roleDisplay.style.display = "none"; }
   }, 1000);
-  roleDisplayTimeout = setTimeout(() => { clearInterval(interval); roleDisplay.style.display = "none"; }, 10000);
+  roleDisplayTimeout = setTimeout(() => { clearInterval(roleDisplayInterval); roleDisplay.style.display = "none"; }, 10000);
 }
 
 // ========== SHUFFLE (Fisher-Yates) ==========
@@ -447,10 +462,25 @@ async function hostMaintenance(lobbyId) {
     const lobbySnap = await getDoc(lobbyRef);
     if (!lobbySnap.exists()) return;
     const lobby = { id: lobbySnap.id, ...lobbySnap.data() };
-    if (lobby.hostId !== currentUser.id) return;
-
     const now = Date.now();
     const hb = lobby.heartbeats || {};
+
+    if (lobby.hostId !== currentUser.id) {
+      // Host failover: if the host's heartbeat is stale (hard crash, no beforeunload),
+      // the first living non-host player promotes itself so the game can't freeze forever.
+      // Only the deterministic successor writes, so all clients agree and there's no race.
+      const hostHb = hb[lobby.hostId] || 0;
+      if (now - hostHb > 120000) {
+        const successor = lobby.players.find(p => p.id !== lobby.hostId);
+        if (successor && successor.id === currentUser.id) {
+          const newPlayers = lobby.players.filter(p => p.id !== lobby.hostId);
+          if (newPlayers.length === 0) { await deleteDoc(lobbyRef); return; }
+          await updateDoc(lobbyRef, { players: newPlayers, hostId: currentUser.id });
+        }
+      }
+      return;
+    }
+
     const inactive = lobby.players.filter(p => p.id !== currentUser.id && (!hb[p.id] || now - hb[p.id] > 120000));
     if (inactive.length > 0) {
       const newPlayers = lobby.players.filter(p => !inactive.some(i => i.id === p.id));
@@ -535,7 +565,7 @@ async function joinLobby(code, playerName) {
     const updatedPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
     await updateDoc(lobbyDoc.ref, { players: updatedPlayers });
     currentUser.id = existing.id;
-    localStorage.setItem("ww_player_id", currentUser.id);
+    storageSet("ww_player_id", currentUser.id);
   } else {
     const newPlayer = { id: currentUser.id, name: playerName, deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
     await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
@@ -565,20 +595,25 @@ async function kickPlayer(lobbyId, playerIdToKick) {
   await updateDoc(lobbyRef, { players: newPlayers });
 }
 
-async function leaveLobby(lobbyId, playerId, hostId) {
+async function leaveLobby(lobbyId, playerId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   const lobbySnap = await getDoc(lobbyRef);
   if (!lobbySnap.exists()) return;
   const lobby = lobbySnap.data();
   let newPlayers = lobby.players.filter(p => p.id !== playerId);
-  let newHostId = hostId;
-  if (hostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
+  // Derive the host from the freshly loaded lobby, not the (possibly null) caller argument,
+  // so the leaving host always hands off and the lobby never ends up host-less and frozen.
+  const currentHostId = lobby.hostId;
+  let newHostId = currentHostId;
+  if (currentHostId === playerId && newPlayers.length > 0) newHostId = newPlayers[0].id;
   if (newPlayers.length === 0) await deleteDoc(lobbyRef);
   else await updateDoc(lobbyRef, { players: newPlayers, hostId: newHostId });
   if (playerId === currentUser.id) {
     currentLobbyId = null;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
+    if (viewTicker) { clearInterval(viewTicker); viewTicker = null; }
+    if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
     hideChat();
     showLobbyMenu();
   }
@@ -592,6 +627,10 @@ function attachListener(lobbyId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   unsubscribeLobby = onSnapshot(lobbyRef, async (snap) => {
     if (!snap.exists()) {
+      // Detach so later writes to a recreated lobby with the same code can't fire this again.
+      if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
       render(`<div class="glass-card" style="text-align:center;"><h2>${t("lobbyClosed")}</h2><p style="margin:1rem 0;">${t("lobbyClosedBody")}</p><button class="glass-button" id="backHome">${t("backToMenu")}</button></div>`);
       document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; hideChat(); showLobbyMenu(); });
       hideChat();
@@ -599,6 +638,9 @@ function attachListener(lobbyId) {
     }
     const data = { id: snap.id, ...snap.data() };
     if (!data.players.find(p => p.id === currentUser.id)) {
+      // Detach first — otherwise every further lobby update re-triggers this branch
+      // and keeps yanking the user back to the menu with a repeated toast.
+      if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
       currentLobbyId = null;
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
@@ -633,7 +675,7 @@ function attachListener(lobbyId) {
     lastStateFingerprint = fp;
 
     if (data.gameStarted && data.phase !== "HUNTER") {
-      const win = checkWinCondition(data.players);
+      const win = checkWinCondition(data.players, data.actionData?.lovers);
       if (win) { showWinScreen(win, data); return; }
     }
     renderByState(data);
@@ -656,15 +698,22 @@ function stateFingerprint(lobby) {
       sgp: lobby.actionData?.smallGirlPeeked, w: lobby.actionData?.witch,
       nv: lobby.actionData?.nightVictim, bt: lobby.actionData?.beschützerTarget,
       wd: lobby.actionData?.witchDone, ad: lobby.actionData?.amorDone,
-      bd: lobby.actionData?.beschützerDone
+      bd: lobby.actionData?.beschützerDone, ph: lobby.actionData?.pendingHunterId
     }
   });
 }
 
 // ========== WIN CONDITION ==========
-function checkWinCondition(players) {
+function checkWinCondition(players, lovers = []) {
   const alive = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
-  if (alive.length === 0) return null;
+  if (alive.length === 0) return "DRAW"; // everyone died (e.g. mutual kill) → nobody wins
+  // Lovers' win: only the two lovers remain and they are a mixed (wolf + non-wolf) couple.
+  if (Array.isArray(lovers) && lovers.length === 2 && alive.length === 2 &&
+      alive.every(p => lovers.includes(p.id))) {
+    const roles = alive.map(p => p.role);
+    const mixed = roles.includes("Werwolf") && roles.some(r => r !== "Werwolf");
+    if (mixed) return "LOVERS";
+  }
   const wolves = alive.filter(p => p.role === "Werwolf");
   const villagers = alive.filter(p => p.role !== "Werwolf");
   if (wolves.length === 0) return "VILLAGE";
@@ -675,10 +724,10 @@ function checkWinCondition(players) {
 function showWinScreen(winner, lobby) {
   currentRender = () => showWinScreen(winner, lobby);
   hideChat();
-  spawnConfetti();
-  const emoji = winner === "VILLAGE" ? "🏘️" : "🐺";
-  const title = winner === "VILLAGE" ? t("villageWins") : t("werewolfWins");
-  const desc = winner === "VILLAGE" ? t("villageWinsDesc") : t("werewolfWinsDesc");
+  if (winner !== "DRAW") spawnConfetti();
+  const emoji = { VILLAGE: "🏘️", WEREWOLF: "🐺", LOVERS: "💘", DRAW: "🤝" }[winner] || "🐺";
+  const title = { VILLAGE: t("villageWins"), WEREWOLF: t("werewolfWins"), LOVERS: t("loversWin"), DRAW: t("drawTitle") }[winner] || t("werewolfWins");
+  const desc = { VILLAGE: t("villageWinsDesc"), WEREWOLF: t("werewolfWinsDesc"), LOVERS: t("loversWinDesc"), DRAW: t("drawDesc") }[winner] || t("werewolfWinsDesc");
   render(`<div class="glass-card" style="text-align:center; padding:2.5rem;">
     <div style="font-size:5rem; margin-bottom:1rem; animation: roleIconPulse 2s infinite;">${emoji}</div>
     <h1>${title}</h1><p style="margin:1rem 0; opacity:0.8; font-size:1.1rem;">${desc}</p>
@@ -778,10 +827,12 @@ async function checkAutomaticAdvance(lobby) {
     else if (narratorStep === "BESCHÜTZER") done = !hasAliveRole(players, "Beschützer") || actionData.beschützerDone;
     else if (narratorStep === "WEREWOLF") {
       const aliveWolves = players.filter(p => p.isAlive && p.role === "Werwolf");
-      done = aliveWolves.length === 0 || Object.keys(actionData.werewolfVotes || {}).length >= aliveWolves.length;
+      const wolfIds = new Set(aliveWolves.map(p => p.id));
+      const wolfVoteCount = Object.keys(actionData.werewolfVotes || {}).filter(id => wolfIds.has(id)).length;
+      done = aliveWolves.length === 0 || wolfVoteCount >= aliveWolves.length;
     }
     else if (narratorStep === "SMALL_GIRL") done = !hasAliveRole(players, "Kleines Mädchen") || actionData.smallGirlPeeked;
-    else if (narratorStep === "SEER") done = !hasAliveRole(players, "Seherin") || actionData.seerTarget;
+    else if (narratorStep === "SEER") done = !hasAliveRole(players, "Seherin") || !!actionData.seerTarget;
     else if (narratorStep === "WITCH") done = !hasAliveRole(players, "Hexe") || actionData.witchDone;
     else done = true;
     if (done || timedOut) await runLocked(() => advanceNightPhase(lobby));
@@ -789,7 +840,8 @@ async function checkAutomaticAdvance(lobby) {
     if (timedOut) await runLocked(() => startVoting(lobby));
   } else if (phase === "VOTING") {
     const alivePlayers = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
-    const voteCount = Object.keys(votes || {}).length;
+    const aliveIds = new Set(alivePlayers.map(p => p.id));
+    const voteCount = Object.keys(votes || {}).filter(id => aliveIds.has(id)).length;
     if (voteCount >= alivePlayers.length || timedOut) await runLocked(() => resolveVoting(lobby));
   } else if (phase === "HUNTER") {
     if (timedOut) await runLocked(() => resolveHunterShot(lobby, null));
@@ -833,7 +885,7 @@ function renderByState(lobby) {
 
   // Show every player their secret role once when the game starts (not just the host).
   if (currentPlayer && currentPlayer.role && currentPlayer.role !== "ERZÄHLER") {
-    const revealId = `${lobby.code}:${currentPlayer.role}`;
+    const revealId = `${lobby.code}:${lobby.gameStartedAt || 0}:${currentPlayer.role}`;
     if (lastRevealId !== revealId) {
       lastRevealId = revealId;
       showRoleFor10Seconds(currentPlayer.role, roleDesc(currentPlayer.role));
@@ -875,7 +927,7 @@ function renderHostOnlyGameView(lobby) {
       </div>
     </div>
   `);
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
   document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
@@ -916,11 +968,11 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
 
     const sett = lobby.settings || {};
     const enabledCount = Object.entries(sett).filter(([k,v]) => v !== false && k !== "Dorfbewohner").length + 2; // +2 for 2 wolves
-    const activeCount = players.length - (confirmedId && lobby.mode !== "online" ? 1 : 0);
-    const roleBalanceClass = enabledCount > activeCount ? 'color:var(--warning)' : 'color:var(--success)';
-    const roleBalanceMsg = enabledCount > activeCount
-      ? t("rolesTooMany", { r: enabledCount, p: activeCount })
-      : t("rolesBalanced", { r: enabledCount, p: activeCount });
+    // Same count the start logic uses, so the balance hint can never disagree with startability.
+    const roleBalanceClass = enabledCount > activePlayerCount ? 'color:var(--warning)' : 'color:var(--success)';
+    const roleBalanceMsg = enabledCount > activePlayerCount
+      ? t("rolesTooMany", { r: enabledCount, p: activePlayerCount })
+      : t("rolesBalanced", { r: enabledCount, p: activePlayerCount });
 
     hostControls = `
       <div style="margin:1.2rem 0; padding:1.2rem; background:rgba(0,0,0,0.25); border-radius:1.2rem;">
@@ -982,7 +1034,7 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
     bindRoleToggleClicks(document);
   }
   document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby));
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
 }
 
 const LOCKED_ROLES = ["Dorfbewohner", "Werwolf"];
@@ -1033,21 +1085,31 @@ async function startGame(lobby) {
     return;
   }
 
-  const enabledRoles = [];
-  // Werwolf + Dorfbewohner always forced
-  enabledRoles.push("Werwolf", "Werwolf");
-  if (settings.Seherin !== false) enabledRoles.push("Seherin");
-  if (settings.Hexe !== false) enabledRoles.push("Hexe");
-  if (settings.Amor !== false) enabledRoles.push("Amor");
-  if (settings.Jäger !== false) enabledRoles.push("Jäger");
-  if (settings["Kleines Mädchen"] !== false) enabledRoles.push("Kleines Mädchen");
-  if (settings.Beschützer !== false) enabledRoles.push("Beschützer");
-  if (settings.Prinz !== false) enabledRoles.push("Prinz");
-  if (settings["Älteste"] !== false) enabledRoles.push("Älteste");
+  const numPlayers = playersToAssign.length;
 
-  let rolePool = [...enabledRoles];
-  // Fill remaining slots with Dorfbewohner (always-on role)
-  while (rolePool.length < playersToAssign.length) rolePool.push("Dorfbewohner");
+  // Optional special roles (one each if enabled).
+  const optionalRoles = [];
+  if (settings.Seherin !== false) optionalRoles.push("Seherin");
+  if (settings.Hexe !== false) optionalRoles.push("Hexe");
+  if (settings.Amor !== false) optionalRoles.push("Amor");
+  if (settings.Jäger !== false) optionalRoles.push("Jäger");
+  if (settings["Kleines Mädchen"] !== false) optionalRoles.push("Kleines Mädchen");
+  if (settings.Beschützer !== false) optionalRoles.push("Beschützer");
+  if (settings.Prinz !== false) optionalRoles.push("Prinz");
+  if (settings["Älteste"] !== false) optionalRoles.push("Älteste");
+
+  // Build a pool of EXACTLY numPlayers roles. Werewolves are mandatory and added first so they
+  // can never be squeezed out when more roles are enabled than there are players (which previously
+  // could produce a game with zero werewolves → instant village win).
+  const wolfCount = Math.min(2, numPlayers);
+  const rolePool = [];
+  for (let i = 0; i < wolfCount; i++) rolePool.push("Werwolf");
+  // Add optional roles in random order, only as many as fit, so dropped roles are random and fair.
+  for (const r of shuffle(optionalRoles)) {
+    if (rolePool.length >= numPlayers) break;
+    rolePool.push(r);
+  }
+  while (rolePool.length < numPlayers) rolePool.push("Dorfbewohner");
 
   const shuffledRoles = shuffle(rolePool);
 
@@ -1059,9 +1121,13 @@ async function startGame(lobby) {
     return { ...p, role: "ERZÄHLER", isAlive: true };
   });
 
+  // Unique per game so a player who gets the same role in the next round of the
+  // same lobby still sees the reveal (the reveal key used to be code:role only).
+  const gameStartedAt = Date.now();
+
   const myData = assigned.find(p => p.id === currentUser.id);
   if (myData && myData.role !== "ERZÄHLER") {
-    lastRevealId = `${lobbyCode}:${myData.role}`;
+    lastRevealId = `${lobbyCode}:${gameStartedAt}:${myData.role}`;
     showRoleFor10Seconds(myData.role, roleDesc(myData.role));
   }
 
@@ -1069,7 +1135,7 @@ async function startGame(lobby) {
 
   await updateDoc(doc(db, "lobbies", lobbyCode), {
     gameStarted: true, phase: "NIGHT", players: assigned,
-    actionData: defaultActionData(),
+    actionData: defaultActionData(), gameStartedAt,
     nightActionsOrder: nightOrder, currentNightIndex: 0,
     narratorStep: nightOrder[0], votes: {},
     chatClearedAt: Date.now(), firstNightDone: false,
@@ -1138,7 +1204,7 @@ function renderNarratorDashboard(lobby) {
     }));
     document.getElementById("narratorHunterSkip")?.addEventListener("click", () => runLocked(() => resolveHunterShot(lobby, null)));
   }
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id));
   document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
@@ -1152,14 +1218,17 @@ function nightActionResetFields() {
 }
 
 // Returns id of a freshly-dead Jäger who can still take a target with him, else null.
-function findPendingHunter(players, deaths, hunterUsedIds) {
+// All hunters that just died and still owe a shot (there can be several in one resolution,
+// e.g. wolves kill one hunter while the witch poisons another).
+function collectPendingHunters(players, deaths, hunterUsedIds) {
+  const res = [];
   for (const id of deaths) {
     const d = players.find(p => p.id === id);
-    if (d && d.role === "Jäger" && !hunterUsedIds.includes(id)) {
-      if (players.some(p => p.isAlive && p.role !== "ERZÄHLER" && p.id !== id)) return id;
+    if (d && d.role === "Jäger" && !hunterUsedIds.includes(id) && !res.includes(id)) {
+      if (players.some(p => p.isAlive && p.role !== "ERZÄHLER" && p.id !== id)) res.push(id);
     }
   }
-  return null;
+  return res;
 }
 
 async function advanceNightPhase(lobby) {
@@ -1172,21 +1241,40 @@ async function advanceNightPhase(lobby) {
   if (nextIdx >= nightActionsOrder.length) {
     // Re-read so we have the victim/witch/beschützer data written during the night.
     const snap = await getDoc(doc(db, "lobbies", id));
-    if (snap.exists()) await resolveNightDeath({ id, ...snap.data() });
+    if (snap.exists() && snap.data().phase === "NIGHT") await resolveNightDeath({ id, ...snap.data() });
   } else {
-    await updateDoc(doc(db, "lobbies", id), {
-      currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx],
-      stepDeadline: deadlineIn(NIGHT_STEP_MS)
-    });
+    // Transaction with an index guard: during a host handoff two clients can briefly both
+    // believe they're the host — without the guard the step counter would jump twice.
+    try {
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, "lobbies", id);
+        const fresh = await tx.get(ref);
+        if (!fresh.exists()) return;
+        const d = fresh.data();
+        if (d.phase !== "NIGHT" || d.currentNightIndex !== currentNightIndex) return; // already advanced
+        tx.update(ref, {
+          currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx],
+          stepDeadline: deadlineIn(NIGHT_STEP_MS)
+        });
+      });
+    } catch (e) { console.warn("advanceNightPhase tx failed", e); }
   }
 }
 
 async function resolveWerewolfKill(lobby) {
   const votes = lobby.actionData?.werewolfVotes || {};
+  const aliveWolfIds = new Set(lobby.players.filter(p => p.isAlive && p.role === "Werwolf").map(p => p.id));
+  const aliveIds = new Set(lobby.players.filter(p => p.isAlive).map(p => p.id));
   const counts = {};
-  Object.values(votes).forEach(v => counts[v] = (counts[v] || 0) + 1);
-  let maxId = null, max = 0;
-  for (const [id, c] of Object.entries(counts)) if (c > max) { max = c; maxId = id; }
+  // Only count votes cast by living wolves and targeting a living player.
+  Object.entries(votes).forEach(([voter, target]) => {
+    if (aliveWolfIds.has(voter) && aliveIds.has(target)) counts[target] = (counts[target] || 0) + 1;
+  });
+  // Highest-voted target wins; ties are broken randomly so the first wolf to vote isn't favoured.
+  let max = 0;
+  for (const c of Object.values(counts)) if (c > max) max = c;
+  const top = Object.keys(counts).filter(id => counts[id] === max);
+  const maxId = top.length ? top[Math.floor(Math.random() * top.length)] : null;
   if (maxId) {
     await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.nightVictim": maxId });
   }
@@ -1204,12 +1292,13 @@ async function resolveNightDeath(lobby) {
   const poisonVictim = witch.poisonTarget || null;
   // Beschützer protection
   if (victim && beschützerTarget === victim) victim = null;
-  // Älteste survival
+  // Älteste survival — recorded in the final write below so the resolution stays atomic.
+  let elderSurvived = false;
   if (victim) {
     const victimPlayer = lobby.players.find(p => p.id === victim);
     if (victimPlayer?.role === "Älteste" && !elderSurvivedIds.includes(victim)) {
       elderSurvivedIds.push(victim);
-      await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.elderSurvivedIds": elderSurvivedIds });
+      elderSurvived = true;
       showToast(t("elderSurvived"), "info");
       victim = null;
     }
@@ -1244,11 +1333,14 @@ async function resolveNightDeath(lobby) {
 
   const deathNames = deaths.map(id => players.find(p => p.id === id)?.name || "?");
   const witchUpdate = { usedHeal: witch.usedHeal || !!witch.healTarget, usedPoison: witch.usedPoison || !!witch.poisonTarget, healTarget: null, poisonTarget: null };
+  const elderUpdate = elderSurvived ? { "actionData.elderSurvivedIds": elderSurvivedIds } : {};
   const hunterUsedIds = lobby.actionData?.hunterUsedIds || [];
-  const pendingHunter = findPendingHunter(players, deaths, hunterUsedIds);
+  const pendingHunters = collectPendingHunters(players, deaths, hunterUsedIds);
 
-  // A dead hunter still shoots: pause in the HUNTER phase until he picks (works for any player, not just the host).
-  if (pendingHunter) {
+  // Dead hunters still shoot: pause in the HUNTER phase until each picks (works for any player,
+  // not just the host). Several hunters can be queued if they died the same night.
+  if (pendingHunters.length) {
+    const [head, ...rest] = pendingHunters;
     await updateDoc(doc(db, "lobbies", lobby.id), {
       players, phase: "HUNTER", narratorStep: "HUNTER", stepDeadline: deadlineIn(HUNTER_MS),
       "actionData.nightVictim": null,
@@ -1256,8 +1348,10 @@ async function resolveNightDeath(lobby) {
       "actionData.witch": witchUpdate,
       "actionData.lastBeschützerTarget": beschützerTarget,
       "actionData.beschützerTarget": null,
-      "actionData.pendingHunterId": pendingHunter,
-      "actionData.hunterReturn": "DAY"
+      "actionData.pendingHunterId": head,
+      "actionData.pendingHunterQueue": rest,
+      "actionData.hunterReturn": "DAY",
+      ...elderUpdate
     });
     return;
   }
@@ -1271,6 +1365,7 @@ async function resolveNightDeath(lobby) {
     "actionData.witch": witchUpdate,
     "actionData.lastBeschützerTarget": beschützerTarget,
     "actionData.beschützerTarget": null,
+    ...elderUpdate,
     ...nightActionResetFields()
   });
 }
@@ -1287,9 +1382,19 @@ async function goToNightFromVote(lobby, players, extra = {}) {
 }
 
 async function resolveVoting(lobby) {
+  // Fresh read + phase guard: a second resolver (dual host during failover, or a late
+  // timeout) must not execute the lynch twice on stale data.
+  const freshSnap = await getDoc(doc(db, "lobbies", lobby.id));
+  if (!freshSnap.exists() || freshSnap.data().phase !== "VOTING") return;
+  lobby = { id: lobby.id, ...freshSnap.data() };
+
   const votes = lobby.votes || {};
+  const aliveIds = new Set(lobby.players.filter(p => p.isAlive && p.role !== "ERZÄHLER").map(p => p.id));
   const counts = {};
-  Object.values(votes).forEach(v => counts[v] = (counts[v] || 0) + 1);
+  // Only count votes from living players targeting a living player (ignore leavers' stale votes).
+  Object.entries(votes).forEach(([voter, target]) => {
+    if (aliveIds.has(voter) && aliveIds.has(target)) counts[target] = (counts[target] || 0) + 1;
+  });
 
   // Find the clear leader. A tie (or no votes) means nobody is executed.
   let maxId = null, max = 0, tie = false;
@@ -1331,11 +1436,12 @@ async function resolveVoting(lobby) {
   }
 
   const hunterUsedIds = lobby.actionData?.hunterUsedIds || [];
-  const pendingHunter = findPendingHunter(players, deaths, hunterUsedIds);
-  if (pendingHunter) {
+  const pendingHunters = collectPendingHunters(players, deaths, hunterUsedIds);
+  if (pendingHunters.length) {
+    const [head, ...rest] = pendingHunters;
     await updateDoc(doc(db, "lobbies", lobby.id), {
       players, phase: "HUNTER", narratorStep: "HUNTER", stepDeadline: deadlineIn(HUNTER_MS),
-      "actionData.pendingHunterId": pendingHunter, "actionData.hunterReturn": "NIGHT"
+      "actionData.pendingHunterId": head, "actionData.pendingHunterQueue": rest, "actionData.hunterReturn": "NIGHT"
     });
     return;
   }
@@ -1345,6 +1451,14 @@ async function resolveVoting(lobby) {
 
 // Resolve the hunter's dying shot. targetId null = he shoots nobody (or timed out).
 async function resolveHunterShot(lobby, targetId) {
+  // Fresh read + guard so a timeout firing right after the hunter clicked (or a second
+  // host) can't resolve the same shot twice.
+  const freshSnap = await getDoc(doc(db, "lobbies", lobby.id));
+  if (!freshSnap.exists() || freshSnap.data().phase !== "HUNTER") return;
+  const freshData = { id: lobby.id, ...freshSnap.data() };
+  if (freshData.actionData?.pendingHunterId !== lobby.actionData?.pendingHunterId) return;
+  lobby = freshData;
+
   const pendingId = lobby.actionData?.pendingHunterId;
   if (!pendingId) return;
   const hunterReturn = lobby.actionData?.hunterReturn || "DAY";
@@ -1371,13 +1485,18 @@ async function resolveHunterShot(lobby, targetId) {
     }
   }
 
-  // The victim could be another hunter -> stay in HUNTER for the next shot.
-  const nextHunter = findPendingHunter(players, deaths, hunterUsedIds);
-  if (nextHunter) {
+  // More hunters may be waiting: those queued from the original resolution plus any new
+  // hunter this shot just killed. Stay in HUNTER until everyone has fired.
+  const queue = lobby.actionData?.pendingHunterQueue || [];
+  const newlyDead = collectPendingHunters(players, deaths, hunterUsedIds);
+  const combinedQueue = [...queue, ...newlyDead].filter((id, i, a) => a.indexOf(id) === i && !hunterUsedIds.includes(id));
+  if (combinedQueue.length) {
+    const [next, ...rest] = combinedQueue;
     const prevDeaths = lobby.actionData?.lastNightDeaths || [];
     await updateDoc(doc(db, "lobbies", lobby.id), {
       players, phase: "HUNTER", narratorStep: "HUNTER", stepDeadline: deadlineIn(HUNTER_MS),
-      "actionData.pendingHunterId": nextHunter, "actionData.hunterUsedIds": hunterUsedIds,
+      "actionData.pendingHunterId": next, "actionData.pendingHunterQueue": rest,
+      "actionData.hunterUsedIds": hunterUsedIds,
       "actionData.lastNightDeaths": [...prevDeaths, ...extraDeathNames]
     });
     return;
@@ -1385,7 +1504,7 @@ async function resolveHunterShot(lobby, targetId) {
 
   if (hunterReturn === "NIGHT") {
     await goToNightFromVote(lobby, players, {
-      "actionData.pendingHunterId": null, "actionData.hunterReturn": null,
+      "actionData.pendingHunterId": null, "actionData.pendingHunterQueue": [], "actionData.hunterReturn": null,
       "actionData.hunterUsedIds": hunterUsedIds
     });
     return;
@@ -1398,7 +1517,7 @@ async function resolveHunterShot(lobby, targetId) {
     players, phase: "DAY", narratorStep: "DAY", chatClearedAt: Date.now(),
     firstNightDone: true, nightActionsOrder: nightOrder, stepDeadline: deadlineIn(DAY_MS),
     "actionData.lastNightDeaths": deathNames,
-    "actionData.pendingHunterId": null, "actionData.hunterReturn": null,
+    "actionData.pendingHunterId": null, "actionData.pendingHunterQueue": [], "actionData.hunterReturn": null,
     "actionData.hunterUsedIds": hunterUsedIds,
     ...nightActionResetFields()
   });
@@ -1423,7 +1542,7 @@ function renderPlayerGameView(lobby, player) {
   `;
 
   const attachBaseListeners = () => {
-    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
     document.getElementById("endGameHost")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
   };
 
@@ -1559,8 +1678,8 @@ function renderPlayerGameView(lobby, player) {
       }));
       document.getElementById("submitWolfVote")?.addEventListener("click", async () => {
         if (sel) {
-          const cur = { ...(lobby.actionData?.werewolfVotes || {}), [player.id]: sel };
-          await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.werewolfVotes": cur });
+          // Field-level write so simultaneous wolf votes don't overwrite each other.
+          await updateDoc(doc(db, "lobbies", lobby.id), { [`actionData.werewolfVotes.${player.id}`]: sel });
           showToast(t("wolfVoted"), "success");
           render(`<div class="glass-card">${baseHeader}<p>${t("wolfWait")}</p></div>`);
           attachBaseListeners();
@@ -1593,6 +1712,8 @@ function renderPlayerGameView(lobby, player) {
           const wolfNames = players.filter(p => p.role === "Werwolf" && p.isAlive).map(p => p.name).join(", ");
           showToast(t("girlFound", { names: wolfNames }), "success");
           await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.smallGirlPeeked": true });
+          render(`<div class="glass-card">${baseHeader}<p>👧 ${escapeHtml(wolfNames || t("nobody"))}</p></div>`);
+          attachBaseListeners();
         }
       });
       document.getElementById("peekNo")?.addEventListener("click", async () => {
@@ -1607,6 +1728,15 @@ function renderPlayerGameView(lobby, player) {
 
     // SEER
     if (narratorStep === "SEER" && player.role === "Seherin") {
+      // Already looked this night → keep showing the result instead of the picker
+      // (a snapshot re-render used to wipe it away).
+      const seenId = lobby.actionData?.seerTarget;
+      if (seenId) {
+        const seen = players.find(p => p.id === seenId);
+        render(`<div class="glass-card">${baseHeader}<p>🔮 ${seen ? `${escapeHtml(seen.name)}: <strong>${roleName(seen.role)}</strong>` : t("playerLeft")}</p></div>`);
+        attachBaseListeners();
+        return;
+      }
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
       render(`
         <div class="glass-card">
@@ -1625,6 +1755,7 @@ function renderPlayerGameView(lobby, player) {
       document.getElementById("seerSubmit")?.addEventListener("click", async () => {
         if (sel) {
           const target = players.find(p => p.id === sel);
+          if (!target) { showToast(t("playerLeft"), "error"); return; }
           showToast(t("seerResult", { name: target.name, role: roleName(target.role) }), "info");
           await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.seerTarget": sel });
           render(`<div class="glass-card">${baseHeader}<p>🔮 ${escapeHtml(target.name)}: <strong>${roleName(target.role)}</strong></p></div>`);
@@ -1653,16 +1784,26 @@ function renderPlayerGameView(lobby, player) {
         </div>
       `);
       document.getElementById("healBtn")?.addEventListener("click", async () => {
-        await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.healTarget": victimId, "actionData.witch.usedHeal": true });
+        // If the poison is already spent there's nothing left to do — finish the step
+        // in the same write so the night doesn't sit out the full timeout.
+        const update = { "actionData.witch.healTarget": victimId, "actionData.witch.usedHeal": true };
+        if (witch.usedPoison) update["actionData.witchDone"] = true;
+        await updateDoc(doc(db, "lobbies", lobby.id), update);
         showToast(t("healed", { name: victimName }), "success");
+        if (witch.usedPoison) { render(`<div class="glass-card">${baseHeader}<p>${t("witchDoneView")}</p></div>`); attachBaseListeners(); }
       });
       document.getElementById("poisonBtn")?.addEventListener("click", () => {
         const aliveOthers = players.filter(p => p.isAlive && p.id !== player.id);
         showChoiceModal(t("poisonWho"), aliveOthers.map(p => ({ id: p.id, name: p.name })), async (targetId) => {
           if (targetId) {
             const targetName = players.find(p => p.id === targetId)?.name;
-            await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.poisonTarget": targetId, "actionData.witch.usedPoison": true });
+            // Same idea: if healing is no longer possible, the witch is done.
+            const healStillPossible = !witch.usedHeal && victimId;
+            const update = { "actionData.witch.poisonTarget": targetId, "actionData.witch.usedPoison": true };
+            if (!healStillPossible) update["actionData.witchDone"] = true;
+            await updateDoc(doc(db, "lobbies", lobby.id), update);
             showToast(t("poisoned", { name: targetName }), "warning");
+            if (!healStillPossible) { render(`<div class="glass-card">${baseHeader}<p>${t("witchDoneView")}</p></div>`); attachBaseListeners(); }
           }
         });
       });
@@ -1740,8 +1881,8 @@ function renderPlayerGameView(lobby, player) {
     }));
     document.getElementById("castVote")?.addEventListener("click", async () => {
       if (sel) {
-        const newVotes = { ...(lobby.votes || {}), [player.id]: sel };
-        await updateDoc(doc(db, "lobbies", lobby.id), { votes: newVotes });
+        // Field-level write so simultaneous votes don't overwrite each other.
+        await updateDoc(doc(db, "lobbies", lobby.id), { [`votes.${player.id}`]: sel });
         showToast(t("voteCast"), "success");
       }
     });
@@ -2026,35 +2167,100 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("chat-toggle-btn")?.addEventListener("click", (e) => { e.stopPropagation(); toggleChat(); });
 
   if (!consentGiven) showConsentModal();
-  else initApp();
+  else { initApp(); setupInstallBanner(); }
 });
 
 window.addEventListener("beforeunload", () => {
   if (currentLobbyId && currentUser.id) {
-    leaveLobby(currentLobbyId, currentUser.id, null);
+    leaveLobby(currentLobbyId, currentUser.id);
   }
 });
 
 function initApp() {
   if (!firebaseReady) { showToast(t("firebaseError"), "error"); return; }
   if (!navigator.onLine) { showOfflineModal(); return; }
-  deviceId = localStorage.getItem("ww_device_id");
-  if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
-  currentUser.id = localStorage.getItem("ww_player_id") || uuid();
-  localStorage.setItem("ww_player_id", currentUser.id);
+  deviceId = storageGet("ww_device_id");
+  if (!deviceId) { deviceId = uuid(); storageSet("ww_device_id", deviceId); }
+  currentUser.id = storageGet("ww_player_id") || uuid();
+  storageSet("ww_player_id", currentUser.id);
   currentUser.deviceId = deviceId;
   renderMainMenu();
+}
+
+// ========== INSTALL BANNER (top bar, iOS + Android) ==========
+const INSTALL_DISMISS_KEY = "ww_install_dismissed";
+const INSTALL_DISMISS_MS = 7 * 24 * 60 * 60 * 1000; // re-ask after a week
+
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+function isIos() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    // iPadOS 13+ reports as Mac but has touch.
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+function installRecentlyDismissed() {
+  try {
+    const v = localStorage.getItem(INSTALL_DISMISS_KEY);
+    return !!v && (Date.now() - parseInt(v, 10)) < INSTALL_DISMISS_MS;
+  } catch { return false; }
+}
+function showInstallBar() {
+  const bar = document.getElementById("install-bar");
+  if (!bar) return;
+  bar.classList.add("show");
+  document.documentElement.classList.add("install-bar-open");
+}
+function hideInstallBar() {
+  const bar = document.getElementById("install-bar");
+  if (bar) bar.classList.remove("show");
+  document.documentElement.classList.remove("install-bar-open");
+}
+function dismissInstallBar() {
+  try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch {}
+  hideInstallBar();
+}
+let installBarReady = false;
+function setupInstallBanner() {
+  if (isStandalone() || installRecentlyDismissed()) return;
+  const bar = document.getElementById("install-bar");
+  const btn = document.getElementById("install-bar-btn");
+  const closeBtn = document.getElementById("install-bar-close");
+  if (!bar || !btn || !closeBtn) return;
+
+  // Wire listeners only once, even if beforeinstallprompt fires repeatedly.
+  if (!installBarReady) {
+    installBarReady = true;
+    closeBtn.addEventListener("click", dismissInstallBar);
+    btn.addEventListener("click", async () => {
+      if (isIos() && !deferredPrompt) {
+        const m = document.getElementById("ios-install-modal");
+        if (m) m.style.display = "flex";
+        return;
+      }
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        try { await deferredPrompt.userChoice; } catch {}
+        deferredPrompt = null;
+        hideInstallBar();
+      }
+    });
+    document.getElementById("ios-install-close")?.addEventListener("click", () => {
+      const m = document.getElementById("ios-install-modal");
+      if (m) m.style.display = "none";
+    });
+  }
+
+  // iOS Safari never fires beforeinstallprompt → show the bar with manual instructions.
+  // Android/Chromium → only show once we actually have a deferred prompt to fire.
+  if (isIos() || deferredPrompt) showInstallBar();
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  const installDiv = document.getElementById("installPrompt");
-  if (installDiv) installDiv.style.display = "flex";
-  document.getElementById("installBtn")?.addEventListener("click", async () => {
-    if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === "accepted") deferredPrompt = null; installDiv.style.display = "none"; }
-  });
-  document.getElementById("closeInstallBtn")?.addEventListener("click", () => { installDiv.style.display = "none"; });
+  if (consentGiven) setupInstallBanner();
 });
+window.addEventListener("appinstalled", () => { deferredPrompt = null; dismissInstallBar(); });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js");

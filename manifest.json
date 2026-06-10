@@ -2,13 +2,26 @@
   "name": "Werwolf Mobile",
   "short_name": "Werwolf",
   "description": "Synchrones Werwolf-Spiel",
-  "start_url": ".",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "theme_color": "#2563eb",
+  "theme_color": "#0a1733",
   "background_color": "#050b1c",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle fill='%232563eb' cx='50' cy='50' r='50'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white'%3E🐺%3C/text%3E%3C/svg%3E",
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle fill='%230a1733' cx='50' cy='50' r='50'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white'%3E🐺%3C/text%3E%3C/svg%3E",
       "sizes": "any",
       "type": "image/svg+xml"
     }

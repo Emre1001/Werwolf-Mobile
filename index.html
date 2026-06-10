@@ -20,8 +20,8 @@
   </script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icon.png">
-  <link rel="icon" href="icon.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="icon-192.png">
   <meta property="og:title" content="Werwolf Mobile">
   <meta property="og:description" content="Das ultimative Werwolf-Spiel für dein Handy – 10 Rollen, Echtzeit-Chat, automatischer Erzähler">
   <meta property="og:type" content="website">
@@ -30,6 +30,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <noscript>
+    <div style="max-width:500px;margin:15vh auto;padding:2rem;text-align:center;color:#fff;font-family:Inter,system-ui,sans-serif;">
+      <h1>🐺 Werwolf Mobile</h1>
+      <p>Für dieses Spiel muss JavaScript aktiviert sein. Bitte aktiviere JavaScript in deinem Browser und lade die Seite neu.</p>
+    </div>
+  </noscript>
   <canvas id="particles"></canvas>
 
   <div id="app" class="glass-app">
@@ -45,20 +51,20 @@
     <i class="fas fa-moon"></i>
   </button>
 
-  <button id="guide-btn" class="guide-btn" title="Spielanleitung">
+  <button id="guide-btn" class="guide-btn" title="Spielanleitung" aria-label="Spielanleitung">
     <i class="fas fa-book-open"></i>
   </button>
 
   <div id="chat-container" class="chat-container" style="display: none;">
     <div class="chat-header" id="chat-header">
       <span id="chat-title">💬 Chat</span>
-      <button id="chat-toggle-btn" class="chat-toggle-btn">−</button>
+      <button id="chat-toggle-btn" class="chat-toggle-btn" aria-label="Chat ein-/ausklappen">−</button>
     </div>
     <div class="chat-body" id="chat-body">
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input-area">
         <input type="text" id="chat-input" placeholder="Nachricht..." data-i18n-ph="chatPlaceholder" maxlength="200" autocomplete="off">
-        <button class="chat-send-btn" id="chat-send"><i class="fas fa-paper-plane"></i></button>
+        <button class="chat-send-btn" id="chat-send" aria-label="Nachricht senden"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
   </div>
@@ -70,12 +76,12 @@
     <div class="phase-overlay-text" id="phase-overlay-text"></div>
   </div>
 
-  <div id="consent-modal" class="modal" style="display: none;">
+  <div id="consent-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="consent-modal-title">
     <div class="modal-content glass-card" style="max-width: 450px; text-align: center;">
       <div class="consent-icon-wrap">
         <i class="fas fa-shield-alt"></i>
       </div>
-      <h3 data-i18n="consentTitle">Datenschutz-Einwilligung</h3>
+      <h3 id="consent-modal-title" data-i18n="consentTitle">Datenschutz-Einwilligung</h3>
       <p data-i18n="consentBody" style="margin-bottom: 1.2rem; line-height: 1.6; opacity: 0.85;">
         Wir speichern auf Ihrem Gerät eine zufällige Spieler-ID und eine Geräte-ID, um das Spiel zu ermöglichen.
         Diese Daten sind technisch notwendig. Mit Ihrer Einwilligung bestätigen Sie, dass Sie mindestens 16 Jahre alt sind.
@@ -91,7 +97,7 @@
     </div>
   </div>
 
-  <div id="legal-modal" class="modal" style="display: none;">
+  <div id="legal-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="legal-modal-title">
     <div class="modal-content glass-card" style="max-width: 550px; max-height: 80vh; overflow-y: auto;">
       <h3 id="legal-modal-title">Impressum</h3>
       <div id="legal-modal-body" style="margin: 1rem 0; text-align: left; line-height: 1.6;"></div>
@@ -99,12 +105,12 @@
     </div>
   </div>
 
-  <div id="offline-modal" class="modal" style="display: none;">
+  <div id="offline-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title">
     <div class="modal-content glass-card" style="max-width: 400px; text-align: center;">
       <div class="offline-icon-wrap">
         <i class="fas fa-wifi-slash"></i>
       </div>
-      <h3 data-i18n="offlineTitle">Keine Internetverbindung</h3>
+      <h3 id="offline-modal-title" data-i18n="offlineTitle">Keine Internetverbindung</h3>
       <p data-i18n="offlineBody" style="margin: 1rem 0; opacity: 0.8;">Bitte überprüfe deine Netzwerkverbindung und versuche es erneut.</p>
       <button class="glass-button" id="offline-retry" data-i18n="retry">Erneut versuchen</button>
     </div>
@@ -124,11 +130,30 @@
     </div>
   </div>
 
-  <div id="installPrompt" style="display:none;" class="install-prompt glass-card">
-    <p><i class="fas fa-download"></i> <span data-i18n="installText">App installieren für das beste Erlebnis</span></p>
-    <div style="display:flex; gap:0.8rem;">
-      <button id="installBtn" class="glass-button" data-i18n="install">Installieren</button>
-      <button id="closeInstallBtn" class="glass-button" style="background:rgba(255,255,255,0.1);" data-i18n="later">Später</button>
+  <div id="install-bar" class="install-bar" role="region" aria-label="App installieren">
+    <img src="icon-192.png" alt="" class="install-bar-icon">
+    <div class="install-bar-text">
+      <strong data-i18n="installBarTitle">Werwolf als App installieren</strong>
+      <span data-i18n="installBarSub">Vollbild, schneller Start & Offline-Modus</span>
+    </div>
+    <button id="install-bar-btn" class="install-bar-btn glass-button" data-i18n="install">Installieren</button>
+    <button id="install-bar-close" class="install-bar-close" aria-label="Schließen">&times;</button>
+  </div>
+
+  <div id="ios-install-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ios-install-title">
+    <div class="modal-content glass-card" style="max-width: 420px; text-align: center;">
+      <div class="consent-icon-wrap">
+        <i class="fas fa-mobile-screen-button"></i>
+      </div>
+      <h3 id="ios-install-title" data-i18n="iosInstallTitle">Zum Home-Bildschirm hinzufügen</h3>
+      <p data-i18n="iosInstallBody" style="margin: 1rem 0; opacity: 0.85; line-height: 1.6;">
+        So installierst du Werwolf auf deinem iPhone oder iPad:
+      </p>
+      <div class="ios-install-steps">
+        <div class="ios-install-step"><i class="fas fa-arrow-up-from-bracket"></i> <span data-i18n="iosStep1">Tippe unten in Safari auf das Teilen-Symbol</span></div>
+        <div class="ios-install-step"><i class="fas fa-square-plus"></i> <span data-i18n="iosStep2">Wähle „Zum Home-Bildschirm“</span></div>
+      </div>
+      <button class="glass-button" id="ios-install-close" data-i18n="close">Schließen</button>
     </div>
   </div>
 
