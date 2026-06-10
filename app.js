@@ -1,6 +1,6 @@
 // app.js – Werwolf Mobile v2.0 | Komplettes Rewrite mit Bugfixes & neuen Features
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs, setDoc, deleteDoc, arrayUnion, getDoc, addDoc, orderBy, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js";
 
 // ========== FIREBASE ==========
@@ -22,11 +22,16 @@ try {
 } catch(e) { console.error("Firebase init error", e); }
 
 // ========== CONSENT ==========
+// localStorage can throw (storage disabled, some private modes) — a top-level throw
+// would prevent the whole module from loading, so every access goes through these.
+function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function storageSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
+
 const CONSENT_KEY = "werwolf_consent_given";
-let consentGiven = localStorage.getItem(CONSENT_KEY) === "true";
+let consentGiven = storageGet(CONSENT_KEY) === "true";
 
 function showConsentModal() { document.getElementById("consent-modal").style.display = "flex"; }
-function acceptConsent() { localStorage.setItem(CONSENT_KEY, "true"); consentGiven = true; document.getElementById("consent-modal").style.display = "none"; initApp(); setupInstallBanner(); }
+function acceptConsent() { storageSet(CONSENT_KEY, "true"); consentGiven = true; document.getElementById("consent-modal").style.display = "none"; initApp(); setupInstallBanner(); }
 function rejectConsent() { showToast(t("consentNeeded"), "warning"); }
 
 // ========== OFFLINE ==========
@@ -51,10 +56,10 @@ function closeLegalModal() { document.getElementById("legal-modal").style.displa
 // ========== GLOBAL STATE ==========
 function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36); }
 
-let deviceId = localStorage.getItem("ww_device_id");
-if (!deviceId && consentGiven) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
-let currentUser = { id: localStorage.getItem("ww_player_id") || uuid(), name: "", deviceId };
-if (consentGiven) localStorage.setItem("ww_player_id", currentUser.id);
+let deviceId = storageGet("ww_device_id");
+if (!deviceId && consentGiven) { deviceId = uuid(); storageSet("ww_device_id", deviceId); }
+let currentUser = { id: storageGet("ww_player_id") || uuid(), name: "", deviceId };
+if (consentGiven) storageSet("ww_player_id", currentUser.id);
 
 let currentLobbyId = null;
 let unsubscribeLobby = null;
@@ -560,7 +565,7 @@ async function joinLobby(code, playerName) {
     const updatedPlayers = data.players.map(p => p.deviceId === deviceId ? { ...p, name: playerName, lastSeen: Date.now(), isAlive: true } : p);
     await updateDoc(lobbyDoc.ref, { players: updatedPlayers });
     currentUser.id = existing.id;
-    localStorage.setItem("ww_player_id", currentUser.id);
+    storageSet("ww_player_id", currentUser.id);
   } else {
     const newPlayer = { id: currentUser.id, name: playerName, deviceId, isAlive: true, role: null, hasUsedAction: false, lastSeen: Date.now() };
     await updateDoc(lobbyDoc.ref, { players: arrayUnion(newPlayer) });
@@ -590,7 +595,7 @@ async function kickPlayer(lobbyId, playerIdToKick) {
   await updateDoc(lobbyRef, { players: newPlayers });
 }
 
-async function leaveLobby(lobbyId, playerId, hostId) {
+async function leaveLobby(lobbyId, playerId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   const lobbySnap = await getDoc(lobbyRef);
   if (!lobbySnap.exists()) return;
@@ -607,6 +612,8 @@ async function leaveLobby(lobbyId, playerId, hostId) {
     currentLobbyId = null;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
+    if (viewTicker) { clearInterval(viewTicker); viewTicker = null; }
+    if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
     hideChat();
     showLobbyMenu();
   }
@@ -620,6 +627,10 @@ function attachListener(lobbyId) {
   const lobbyRef = doc(db, "lobbies", lobbyId);
   unsubscribeLobby = onSnapshot(lobbyRef, async (snap) => {
     if (!snap.exists()) {
+      // Detach so later writes to a recreated lobby with the same code can't fire this again.
+      if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
       render(`<div class="glass-card" style="text-align:center;"><h2>${t("lobbyClosed")}</h2><p style="margin:1rem 0;">${t("lobbyClosedBody")}</p><button class="glass-button" id="backHome">${t("backToMenu")}</button></div>`);
       document.getElementById("backHome")?.addEventListener("click", () => { currentLobbyId = null; hideChat(); showLobbyMenu(); });
       hideChat();
@@ -627,6 +638,9 @@ function attachListener(lobbyId) {
     }
     const data = { id: snap.id, ...snap.data() };
     if (!data.players.find(p => p.id === currentUser.id)) {
+      // Detach first — otherwise every further lobby update re-triggers this branch
+      // and keeps yanking the user back to the menu with a repeated toast.
+      if (unsubscribeLobby) { unsubscribeLobby(); unsubscribeLobby = null; }
       currentLobbyId = null;
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (inactiveCheckInterval) clearInterval(inactiveCheckInterval);
@@ -871,7 +885,7 @@ function renderByState(lobby) {
 
   // Show every player their secret role once when the game starts (not just the host).
   if (currentPlayer && currentPlayer.role && currentPlayer.role !== "ERZÄHLER") {
-    const revealId = `${lobby.code}:${currentPlayer.role}`;
+    const revealId = `${lobby.code}:${lobby.gameStartedAt || 0}:${currentPlayer.role}`;
     if (lastRevealId !== revealId) {
       lastRevealId = revealId;
       showRoleFor10Seconds(currentPlayer.role, roleDesc(currentPlayer.role));
@@ -913,7 +927,7 @@ function renderHostOnlyGameView(lobby) {
       </div>
     </div>
   `);
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
   document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
@@ -954,11 +968,11 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
 
     const sett = lobby.settings || {};
     const enabledCount = Object.entries(sett).filter(([k,v]) => v !== false && k !== "Dorfbewohner").length + 2; // +2 for 2 wolves
-    const activeCount = players.length - (confirmedId && lobby.mode !== "online" ? 1 : 0);
-    const roleBalanceClass = enabledCount > activeCount ? 'color:var(--warning)' : 'color:var(--success)';
-    const roleBalanceMsg = enabledCount > activeCount
-      ? t("rolesTooMany", { r: enabledCount, p: activeCount })
-      : t("rolesBalanced", { r: enabledCount, p: activeCount });
+    // Same count the start logic uses, so the balance hint can never disagree with startability.
+    const roleBalanceClass = enabledCount > activePlayerCount ? 'color:var(--warning)' : 'color:var(--success)';
+    const roleBalanceMsg = enabledCount > activePlayerCount
+      ? t("rolesTooMany", { r: enabledCount, p: activePlayerCount })
+      : t("rolesBalanced", { r: enabledCount, p: activePlayerCount });
 
     hostControls = `
       <div style="margin:1.2rem 0; padding:1.2rem; background:rgba(0,0,0,0.25); border-radius:1.2rem;">
@@ -1020,7 +1034,7 @@ function renderLobbyView(lobby, isHost, currentPlayer) {
     bindRoleToggleClicks(document);
   }
   document.getElementById("startGameBtn")?.addEventListener("click", () => startGame(lobby));
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
 }
 
 const LOCKED_ROLES = ["Dorfbewohner", "Werwolf"];
@@ -1107,9 +1121,13 @@ async function startGame(lobby) {
     return { ...p, role: "ERZÄHLER", isAlive: true };
   });
 
+  // Unique per game so a player who gets the same role in the next round of the
+  // same lobby still sees the reveal (the reveal key used to be code:role only).
+  const gameStartedAt = Date.now();
+
   const myData = assigned.find(p => p.id === currentUser.id);
   if (myData && myData.role !== "ERZÄHLER") {
-    lastRevealId = `${lobbyCode}:${myData.role}`;
+    lastRevealId = `${lobbyCode}:${gameStartedAt}:${myData.role}`;
     showRoleFor10Seconds(myData.role, roleDesc(myData.role));
   }
 
@@ -1117,7 +1135,7 @@ async function startGame(lobby) {
 
   await updateDoc(doc(db, "lobbies", lobbyCode), {
     gameStarted: true, phase: "NIGHT", players: assigned,
-    actionData: defaultActionData(),
+    actionData: defaultActionData(), gameStartedAt,
     nightActionsOrder: nightOrder, currentNightIndex: 0,
     narratorStep: nightOrder[0], votes: {},
     chatClearedAt: Date.now(), firstNightDone: false,
@@ -1186,7 +1204,7 @@ function renderNarratorDashboard(lobby) {
     }));
     document.getElementById("narratorHunterSkip")?.addEventListener("click", () => runLocked(() => resolveHunterShot(lobby, null)));
   }
-  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id, lobby.hostId));
+  document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(id, currentUser.id));
   document.getElementById("endGame")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
 }
 
@@ -1223,12 +1241,23 @@ async function advanceNightPhase(lobby) {
   if (nextIdx >= nightActionsOrder.length) {
     // Re-read so we have the victim/witch/beschützer data written during the night.
     const snap = await getDoc(doc(db, "lobbies", id));
-    if (snap.exists()) await resolveNightDeath({ id, ...snap.data() });
+    if (snap.exists() && snap.data().phase === "NIGHT") await resolveNightDeath({ id, ...snap.data() });
   } else {
-    await updateDoc(doc(db, "lobbies", id), {
-      currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx],
-      stepDeadline: deadlineIn(NIGHT_STEP_MS)
-    });
+    // Transaction with an index guard: during a host handoff two clients can briefly both
+    // believe they're the host — without the guard the step counter would jump twice.
+    try {
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, "lobbies", id);
+        const fresh = await tx.get(ref);
+        if (!fresh.exists()) return;
+        const d = fresh.data();
+        if (d.phase !== "NIGHT" || d.currentNightIndex !== currentNightIndex) return; // already advanced
+        tx.update(ref, {
+          currentNightIndex: nextIdx, narratorStep: nightActionsOrder[nextIdx],
+          stepDeadline: deadlineIn(NIGHT_STEP_MS)
+        });
+      });
+    } catch (e) { console.warn("advanceNightPhase tx failed", e); }
   }
 }
 
@@ -1263,12 +1292,13 @@ async function resolveNightDeath(lobby) {
   const poisonVictim = witch.poisonTarget || null;
   // Beschützer protection
   if (victim && beschützerTarget === victim) victim = null;
-  // Älteste survival
+  // Älteste survival — recorded in the final write below so the resolution stays atomic.
+  let elderSurvived = false;
   if (victim) {
     const victimPlayer = lobby.players.find(p => p.id === victim);
     if (victimPlayer?.role === "Älteste" && !elderSurvivedIds.includes(victim)) {
       elderSurvivedIds.push(victim);
-      await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.elderSurvivedIds": elderSurvivedIds });
+      elderSurvived = true;
       showToast(t("elderSurvived"), "info");
       victim = null;
     }
@@ -1303,6 +1333,7 @@ async function resolveNightDeath(lobby) {
 
   const deathNames = deaths.map(id => players.find(p => p.id === id)?.name || "?");
   const witchUpdate = { usedHeal: witch.usedHeal || !!witch.healTarget, usedPoison: witch.usedPoison || !!witch.poisonTarget, healTarget: null, poisonTarget: null };
+  const elderUpdate = elderSurvived ? { "actionData.elderSurvivedIds": elderSurvivedIds } : {};
   const hunterUsedIds = lobby.actionData?.hunterUsedIds || [];
   const pendingHunters = collectPendingHunters(players, deaths, hunterUsedIds);
 
@@ -1319,7 +1350,8 @@ async function resolveNightDeath(lobby) {
       "actionData.beschützerTarget": null,
       "actionData.pendingHunterId": head,
       "actionData.pendingHunterQueue": rest,
-      "actionData.hunterReturn": "DAY"
+      "actionData.hunterReturn": "DAY",
+      ...elderUpdate
     });
     return;
   }
@@ -1333,6 +1365,7 @@ async function resolveNightDeath(lobby) {
     "actionData.witch": witchUpdate,
     "actionData.lastBeschützerTarget": beschützerTarget,
     "actionData.beschützerTarget": null,
+    ...elderUpdate,
     ...nightActionResetFields()
   });
 }
@@ -1349,6 +1382,12 @@ async function goToNightFromVote(lobby, players, extra = {}) {
 }
 
 async function resolveVoting(lobby) {
+  // Fresh read + phase guard: a second resolver (dual host during failover, or a late
+  // timeout) must not execute the lynch twice on stale data.
+  const freshSnap = await getDoc(doc(db, "lobbies", lobby.id));
+  if (!freshSnap.exists() || freshSnap.data().phase !== "VOTING") return;
+  lobby = { id: lobby.id, ...freshSnap.data() };
+
   const votes = lobby.votes || {};
   const aliveIds = new Set(lobby.players.filter(p => p.isAlive && p.role !== "ERZÄHLER").map(p => p.id));
   const counts = {};
@@ -1412,6 +1451,14 @@ async function resolveVoting(lobby) {
 
 // Resolve the hunter's dying shot. targetId null = he shoots nobody (or timed out).
 async function resolveHunterShot(lobby, targetId) {
+  // Fresh read + guard so a timeout firing right after the hunter clicked (or a second
+  // host) can't resolve the same shot twice.
+  const freshSnap = await getDoc(doc(db, "lobbies", lobby.id));
+  if (!freshSnap.exists() || freshSnap.data().phase !== "HUNTER") return;
+  const freshData = { id: lobby.id, ...freshSnap.data() };
+  if (freshData.actionData?.pendingHunterId !== lobby.actionData?.pendingHunterId) return;
+  lobby = freshData;
+
   const pendingId = lobby.actionData?.pendingHunterId;
   if (!pendingId) return;
   const hunterReturn = lobby.actionData?.hunterReturn || "DAY";
@@ -1495,7 +1542,7 @@ function renderPlayerGameView(lobby, player) {
   `;
 
   const attachBaseListeners = () => {
-    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id, lobby.hostId));
+    document.getElementById("leaveLobbyBtn")?.addEventListener("click", () => leaveLobby(lobby.id, currentUser.id));
     document.getElementById("endGameHost")?.addEventListener("click", async () => { showConfirmModal(t("endGameConfirm"), async () => { await deleteDoc(doc(db,"lobbies",lobby.id)); hideChat(); showLobbyMenu(); }) });
   };
 
@@ -1681,6 +1728,15 @@ function renderPlayerGameView(lobby, player) {
 
     // SEER
     if (narratorStep === "SEER" && player.role === "Seherin") {
+      // Already looked this night → keep showing the result instead of the picker
+      // (a snapshot re-render used to wipe it away).
+      const seenId = lobby.actionData?.seerTarget;
+      if (seenId) {
+        const seen = players.find(p => p.id === seenId);
+        render(`<div class="glass-card">${baseHeader}<p>🔮 ${seen ? `${escapeHtml(seen.name)}: <strong>${roleName(seen.role)}</strong>` : t("playerLeft")}</p></div>`);
+        attachBaseListeners();
+        return;
+      }
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
       render(`
         <div class="glass-card">
@@ -1728,16 +1784,26 @@ function renderPlayerGameView(lobby, player) {
         </div>
       `);
       document.getElementById("healBtn")?.addEventListener("click", async () => {
-        await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.healTarget": victimId, "actionData.witch.usedHeal": true });
+        // If the poison is already spent there's nothing left to do — finish the step
+        // in the same write so the night doesn't sit out the full timeout.
+        const update = { "actionData.witch.healTarget": victimId, "actionData.witch.usedHeal": true };
+        if (witch.usedPoison) update["actionData.witchDone"] = true;
+        await updateDoc(doc(db, "lobbies", lobby.id), update);
         showToast(t("healed", { name: victimName }), "success");
+        if (witch.usedPoison) { render(`<div class="glass-card">${baseHeader}<p>${t("witchDoneView")}</p></div>`); attachBaseListeners(); }
       });
       document.getElementById("poisonBtn")?.addEventListener("click", () => {
         const aliveOthers = players.filter(p => p.isAlive && p.id !== player.id);
         showChoiceModal(t("poisonWho"), aliveOthers.map(p => ({ id: p.id, name: p.name })), async (targetId) => {
           if (targetId) {
             const targetName = players.find(p => p.id === targetId)?.name;
-            await updateDoc(doc(db, "lobbies", lobby.id), { "actionData.witch.poisonTarget": targetId, "actionData.witch.usedPoison": true });
+            // Same idea: if healing is no longer possible, the witch is done.
+            const healStillPossible = !witch.usedHeal && victimId;
+            const update = { "actionData.witch.poisonTarget": targetId, "actionData.witch.usedPoison": true };
+            if (!healStillPossible) update["actionData.witchDone"] = true;
+            await updateDoc(doc(db, "lobbies", lobby.id), update);
             showToast(t("poisoned", { name: targetName }), "warning");
+            if (!healStillPossible) { render(`<div class="glass-card">${baseHeader}<p>${t("witchDoneView")}</p></div>`); attachBaseListeners(); }
           }
         });
       });
@@ -2106,17 +2172,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.addEventListener("beforeunload", () => {
   if (currentLobbyId && currentUser.id) {
-    leaveLobby(currentLobbyId, currentUser.id, null);
+    leaveLobby(currentLobbyId, currentUser.id);
   }
 });
 
 function initApp() {
   if (!firebaseReady) { showToast(t("firebaseError"), "error"); return; }
   if (!navigator.onLine) { showOfflineModal(); return; }
-  deviceId = localStorage.getItem("ww_device_id");
-  if (!deviceId) { deviceId = uuid(); localStorage.setItem("ww_device_id", deviceId); }
-  currentUser.id = localStorage.getItem("ww_player_id") || uuid();
-  localStorage.setItem("ww_player_id", currentUser.id);
+  deviceId = storageGet("ww_device_id");
+  if (!deviceId) { deviceId = uuid(); storageSet("ww_device_id", deviceId); }
+  currentUser.id = storageGet("ww_player_id") || uuid();
+  storageSet("ww_player_id", currentUser.id);
   currentUser.deviceId = deviceId;
   renderMainMenu();
 }

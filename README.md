@@ -269,6 +269,18 @@ Werwolf-Mobile/
 - **Faires Werwolf-Patt** → Bei Stimmengleichheit der Wölfe entscheidet der Zufall, nicht die Klick-Reihenfolge
 - **Sofortiges Feedback** → Kleines Mädchen sieht nach dem Spähen sofort eine Warte-/Ergebnis-Ansicht
 
+## 🐛 Stabilitäts-Bugfixes (v2.3)
+
+- **Hexe** → Nacht endet sofort, wenn beide Tränke verbraucht sind (kein 90-Sekunden-Warten mehr)
+- **Doppel-Auflösungs-Schutz** → Nacht-Schritte, Abstimmung und Jäger-Schuss sind gegen doppelte Ausführung abgesichert (Transaktion bzw. Frisch-Lesen mit Phasen-Guard)
+- **Älteste** → Überlebens-Status wird atomar mit der Nacht-Auflösung geschrieben
+- **Rollen-Reveal** → Wird jetzt in jedem Spiel angezeigt, auch bei gleicher Rolle in derselben Lobby
+- **Privatmodus** → `localStorage`-Zugriffe abgesichert; App lädt auch bei deaktiviertem Speicher
+- **Rausgeworfen-Schleife** → Nach Kick/Lobby-Ende wird der Listener sauber getrennt (keine Toast-Spam-Schleife)
+- **Seherin** → Ergebnis bleibt nach Re-Render sichtbar
+- **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
+- **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
+
 ## 📲 Installations-Leiste (iOS & Android)
 
 Eine elegante Leiste oben fragt, ob man Werwolf als App installieren möchte:

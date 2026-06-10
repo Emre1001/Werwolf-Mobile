@@ -159,14 +159,21 @@ body {
 }
 
 /* ========== TYPOGRAPHY ========== */
+/* Gradient text only where clip-to-text is supported — otherwise color:transparent
+   would render the headings invisible. */
 h1, h2, h3 {
   font-weight: 700;
-  background: linear-gradient(135deg, var(--text) 0%, var(--accent-glow) 110%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
+  color: var(--text);
   letter-spacing: -0.02em;
   margin-bottom: 1rem;
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  h1, h2, h3 {
+    background: linear-gradient(135deg, var(--text) 0%, var(--accent-glow) 110%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
 }
 
 h1 { font-size: 2rem; font-weight: 800; }
@@ -816,11 +823,16 @@ input:checked + .slider:before { transform: translateX(24px); }
   font-size: 1.8rem;
   font-weight: 700;
   margin-top: 1rem;
-  background: linear-gradient(135deg, #fff, var(--accent-glow));
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
+  color: #fff;
   animation: phaseTextSlide 0.5s ease 0.3s both;
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .phase-overlay-text {
+    background: linear-gradient(135deg, #fff, var(--accent-glow));
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
 }
 
 @keyframes phaseTextSlide {
@@ -1341,11 +1353,16 @@ html.install-bar-open .lang-select {
 
 /* ========== REDUCED MOTION ========== */
 @media (prefers-reduced-motion: reduce) {
+  /* Disable animations entirely instead of fast-forwarding them: a 0.001s run of a
+     looping/forwards animation leaves elements stuck in their final keyframe
+     (invisible confetti, mid-transition cards). The loader keeps spinning since
+     it's the only progress indicator. */
   *, *::before, *::after {
-    animation-duration: 0.001s !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
     transition-duration: 0.001s !important;
   }
+  .loader { animation: spin 0.8s linear infinite !important; }
+  .confetti-piece { display: none; }
 }
 
 /* ========== RESPONSIVE ========== */
