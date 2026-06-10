@@ -281,6 +281,18 @@ Werwolf-Mobile/
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
 
+## ✨ UI-Facelift (v4)
+
+- **Neues Hauptmenü** → Hero mit schwebendem Logo, Shimmer-Titel, Feature-Pills, gestaffelte Einblend-Animationen
+- **Phasen-Ambiente** → Hintergrund färbt sich je nach Spielphase (Nacht/Tag/Abstimmung/Jäger) mit sanften Übergängen
+- **Win-Screen** → Rotierende Lichtstrahlen, springendes Sieger-Emoji, gestaffelte Spieler-Aufdeckung, Themes pro Sieger-Team
+- **Werwolf-Rudel-Status** → Live-Anzeige, wie viele Wölfe schon abgestimmt haben (animierte Pfoten-Punkte)
+- **Countdown-Dringlichkeit** → Timer pulsiert rot in den letzten 10 Sekunden
+- **Mikro-Animationen überall** → Button-Sheen, Vote-Karten-Pop, Toast-Bounce, Modal-Pop, Chat-Slide, Todes-Banner-Blitz
+- **Premium-Glas** → Gradient-Hairline-Borders, innere Highlights, Aurora-Hintergrund mit Vignette
+- **Barrierefreiheit** → Sichtbare Fokus-Ringe; `prefers-reduced-motion` deaktiviert weiterhin alle Animationen
+- **Bugfix** → Werwolf sieht nach abgegebener Stimme die Warte-Ansicht statt zurück zur Auswahl zu springen
+
 ## 📲 Installations-Leiste (iOS & Android)
 
 Eine elegante Leiste oben fragt, ob man Werwolf als App installieren möchte:

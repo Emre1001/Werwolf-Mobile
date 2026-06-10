@@ -1384,3 +1384,409 @@ html.install-bar-open .lang-select {
   .toast-container { bottom: 4.5rem; }
   .vote-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
 }
+
+/* ============================================================
+   ✦ FRONTEND FACELIFT (v4) — premium polish layer
+   ============================================================ */
+
+/* ---- Richer animated backdrop ---- */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(48rem 48rem at 12% -8%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(42rem 42rem at 108% 12%, rgba(37, 99, 235, 0.18), transparent 58%),
+    radial-gradient(50rem 50rem at 50% 116%, rgba(99, 102, 241, 0.14), transparent 60%);
+  animation: auroraShift 26s ease-in-out infinite alternate;
+}
+@keyframes auroraShift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
+  100% { transform: translate3d(0, -2%, 0) scale(1.12); opacity: 1; }
+}
+/* subtle top/bottom vignette for depth */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 80% at 50% 40%, transparent 55%, rgba(0,0,0,0.28) 100%);
+}
+:root[data-theme="light"] body::after { background: radial-gradient(120% 80% at 50% 40%, transparent 60%, rgba(37,99,235,0.06) 100%); }
+
+/* ---- Premium glass card: gradient hairline border + inner highlight ---- */
+.glass-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0)) ,
+    var(--card-bg);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 0 0 1px rgba(96,165,250,0.06);
+  position: relative;
+}
+.glass-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(150deg, rgba(125,211,252,0.55), rgba(96,165,250,0.12) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* ---- Buttons: animated sheen sweep + crisper depth ---- */
+.glass-button {
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 26px -10px rgba(37,99,235,0.65), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.glass-button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.6s cubic-bezier(0.2,0.8,0.3,1);
+  pointer-events: none;
+}
+.glass-button:hover::before { left: 130%; }
+
+.btn-hero {
+  width: 100%;
+  font-size: 1.08rem;
+  padding: 0.95rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent-glow), var(--accent-strong));
+  box-shadow: 0 14px 34px -10px rgba(56,189,248,0.7), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+/* ---- Menu shell + hero ---- */
+.menu-shell { max-width: 600px; margin: 0 auto; }
+.menu-card { padding: 2.2rem 1.9rem; }
+
+.hero { text-align: center; margin-bottom: 1.6rem; }
+.hero-logo {
+  width: 92px;
+  height: 92px;
+  margin: 0 auto 0.9rem;
+  border-radius: 28px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 35%, rgba(56,189,248,0.35), rgba(37,99,235,0.18));
+  border: 1px solid rgba(125,211,252,0.4);
+  box-shadow: 0 18px 40px -14px rgba(56,189,248,0.6), inset 0 1px 0 rgba(255,255,255,0.25);
+  animation: logoFloat 5s ease-in-out infinite;
+}
+.hero-logo-emoji { font-size: 3rem; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45)); }
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-8px) rotate(2deg); }
+}
+.hero-title {
+  font-size: 2.3rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+}
+.hero-title-mobile { font-size: 0.62em; letter-spacing: 0.42em; font-weight: 700; opacity: 0.9; padding-left: 0.42em; }
+.hero-tagline { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 1rem; }
+
+.hero-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+}
+.hero-pill i { color: var(--accent-glow); }
+
+/* ---- Name field with leading icon ---- */
+.name-field { position: relative; margin-bottom: 0.9rem; }
+.name-field-icon {
+  position: absolute;
+  left: 1.1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  pointer-events: none;
+  transition: color 0.25s ease;
+}
+.name-field input { padding-left: 2.7rem; }
+.name-field:focus-within .name-field-icon { color: var(--accent-glow); }
+
+.quick-hint { text-align: center; color: var(--text-dim); opacity: 0.8; font-size: 0.8rem; margin: 0.6rem 0 0; }
+
+/* ---- "or" divider ---- */
+.menu-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1.4rem 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+.menu-divider::before, .menu-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--card-border), transparent);
+}
+
+/* ---- Icon action buttons refinement ---- */
+.icon-grid { margin: 0; gap: 0.8rem; }
+.icon-button { border-radius: 1.25rem; padding: 1.3rem 0.8rem; backdrop-filter: blur(6px); }
+.icon-button i { font-size: 2rem; filter: drop-shadow(0 4px 10px rgba(56,189,248,0.35)); }
+
+/* ---- Footer / donate ---- */
+.menu-footer { text-align: center; margin-top: 1.6rem; }
+.donate-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.donate-link:hover { color: var(--accent-glow); border-color: var(--accent-light); transform: translateY(-2px); }
+
+/* ---- Inputs: smoother ---- */
+input, select { border-radius: 1rem; }
+input:focus { border-radius: 1rem; }
+
+/* ---- Floating control buttons: subtle glassy upgrade ---- */
+.guide-btn, .theme-toggle {
+  box-shadow: 0 8px 20px -8px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* ---- Mobile tuning for the new hero ---- */
+@media (max-width: 760px) {
+  .menu-card { padding: 1.6rem 1.2rem; }
+  .hero-logo { width: 78px; height: 78px; border-radius: 22px; }
+  .hero-logo-emoji { font-size: 2.5rem; }
+  .hero-title { font-size: 1.9rem; }
+  .icon-grid { gap: 0.6rem; }
+}
+
+/* ============================================================
+   ✦ ANIMATION SUITE (v4.1) — phase ambience, staggers, micro-FX
+   ============================================================ */
+
+/* ---- Per-phase ambient tint (body[data-phase] set from app.js) ---- */
+.bg-animation { transition: background 1.2s ease, opacity 1.2s ease; }
+body[data-phase="NIGHT"] .bg-animation {
+  background:
+    radial-gradient(44rem 44rem at 80% -10%, rgba(99, 102, 241, 0.30), transparent 60%),
+    radial-gradient(38rem 38rem at 15% 85%, rgba(30, 58, 138, 0.35), transparent 60%);
+}
+body[data-phase="DAY"] .bg-animation {
+  background:
+    radial-gradient(44rem 44rem at 20% -10%, rgba(251, 191, 36, 0.16), transparent 60%),
+    radial-gradient(40rem 40rem at 85% 80%, rgba(56, 189, 248, 0.18), transparent 60%);
+}
+body[data-phase="VOTING"] .bg-animation {
+  background:
+    radial-gradient(44rem 44rem at 50% -10%, rgba(239, 68, 68, 0.16), transparent 60%),
+    radial-gradient(40rem 40rem at 80% 90%, rgba(37, 99, 235, 0.20), transparent 60%);
+}
+body[data-phase="HUNTER"] .bg-animation {
+  background:
+    radial-gradient(44rem 44rem at 50% 0%, rgba(245, 158, 11, 0.20), transparent 60%),
+    radial-gradient(40rem 40rem at 20% 90%, rgba(37, 99, 235, 0.18), transparent 60%);
+}
+/* gentle global darkening at night */
+body[data-phase="NIGHT"]::after {
+  background: radial-gradient(120% 80% at 50% 40%, transparent 45%, rgba(0,0,10,0.45) 100%);
+}
+
+/* ---- Hero title shimmer sweep ---- */
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .hero-title {
+    background: linear-gradient(110deg, var(--text) 20%, var(--accent-glow) 38%, var(--accent-glow-soft) 42%, var(--text) 60%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: titleShimmer 5.5s ease-in-out infinite;
+  }
+}
+@keyframes titleShimmer {
+  0%, 60%, 100% { background-position: 110% 0; }
+  30% { background-position: -10% 0; }
+}
+
+/* ---- Staggered entrance of menu blocks ---- */
+.menu-card > * { animation: riseIn 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.05) both; }
+.menu-card > *:nth-child(1) { animation-delay: 0.05s; }
+.menu-card > *:nth-child(2) { animation-delay: 0.14s; }
+.menu-card > *:nth-child(3) { animation-delay: 0.22s; }
+.menu-card > *:nth-child(4) { animation-delay: 0.30s; }
+.menu-card > *:nth-child(5) { animation-delay: 0.38s; }
+.menu-card > *:nth-child(6) { animation-delay: 0.46s; }
+.menu-card > *:nth-child(7) { animation-delay: 0.54s; }
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero-pill { animation: riseIn 0.5s cubic-bezier(0.2,0.9,0.3,1.05) both; }
+.hero-pills .hero-pill:nth-child(1) { animation-delay: 0.35s; }
+.hero-pills .hero-pill:nth-child(2) { animation-delay: 0.45s; }
+.hero-pills .hero-pill:nth-child(3) { animation-delay: 0.55s; }
+
+/* ---- Countdown urgency ---- */
+.countdown-urgent {
+  color: var(--danger) !important;
+  animation: urgentPulse 1s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes urgentPulse {
+  0%, 100% { transform: scale(1); text-shadow: 0 0 0 rgba(239,68,68,0); }
+  50% { transform: scale(1.18); text-shadow: 0 0 14px rgba(239,68,68,0.65); }
+}
+
+/* ---- Wolf pack status dots ---- */
+.pack-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.6rem 0 1rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  width: fit-content;
+}
+.pack-dot { font-size: 1.1rem; opacity: 0.3; filter: grayscale(1); transition: all 0.4s ease; }
+.pack-dot.voted { opacity: 1; filter: none; animation: packVoted 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+@keyframes packVoted {
+  0% { transform: scale(0.4) rotate(-20deg); }
+  70% { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+.pack-count { font-size: 0.8rem; font-weight: 700; color: var(--danger); margin-left: 0.3rem; }
+
+/* ---- Win screen ---- */
+.win-screen { text-align: center; padding: 2.5rem; position: relative; overflow: hidden; }
+.win-rays {
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+  background: conic-gradient(from 0deg,
+    transparent 0deg, rgba(56,189,248,0.08) 14deg, transparent 28deg,
+    transparent 90deg, rgba(56,189,248,0.08) 104deg, transparent 118deg,
+    transparent 180deg, rgba(56,189,248,0.08) 194deg, transparent 208deg,
+    transparent 270deg, rgba(56,189,248,0.08) 284deg, transparent 298deg);
+  animation: raysSpin 24s linear infinite;
+}
+@keyframes raysSpin { to { transform: rotate(360deg); } }
+.win-wolf .win-rays { filter: hue-rotate(140deg) saturate(1.6); }
+.win-lovers .win-rays { filter: hue-rotate(80deg) saturate(1.4); }
+
+.win-emoji {
+  font-size: 5rem;
+  margin-bottom: 0.6rem;
+  display: inline-block;
+  animation: winBounce 1s cubic-bezier(0.2, 0.9, 0.3, 1.4), winFloat 3.5s ease-in-out 1s infinite;
+  filter: drop-shadow(0 14px 26px rgba(0,0,0,0.45));
+  position: relative;
+}
+@keyframes winBounce {
+  0% { transform: scale(0) rotate(-30deg); opacity: 0; }
+  60% { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes winFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.win-title { animation: riseIn 0.5s 0.25s cubic-bezier(0.2,0.9,0.3,1.05) both; position: relative; }
+.win-desc { margin: 0.8rem 0 1rem; opacity: 0.8; font-size: 1.05rem; animation: riseIn 0.5s 0.4s both; position: relative; }
+.win-stand { margin: 1.2rem 0 1.6rem; animation: riseIn 0.5s 0.5s both; position: relative; }
+.win-stand-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.45rem; margin-top: 0.8rem; }
+.win-tag { animation: winTagPop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.35) both; }
+@keyframes winTagPop {
+  0% { opacity: 0; transform: scale(0.5) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.win-screen .btn-hero { animation: riseIn 0.5s 0.7s both; position: relative; }
+
+/* ---- Vote cards: lively selection ---- */
+.vote-card { transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.2); }
+.vote-card:hover { transform: translateY(-4px) scale(1.03); }
+.vote-card.selected {
+  animation: votePicked 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  box-shadow: 0 0 0 2px var(--accent-glow), 0 10px 26px -8px rgba(56,189,248,0.6);
+}
+@keyframes votePicked {
+  0% { transform: scale(0.92); }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* ---- Toasts: bouncy entrance ---- */
+.toast { animation: toastIn 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.35); }
+@keyframes toastIn {
+  0% { opacity: 0; transform: translateY(24px) scale(0.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---- Modals: pop ---- */
+.modal .modal-content, .choice-modal-overlay .glass-card {
+  animation: modalPop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.25);
+}
+@keyframes modalPop {
+  0% { opacity: 0; transform: scale(0.88) translateY(14px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ---- Chat messages slide in ---- */
+.chat-msg { animation: chatSlide 0.3s ease both; }
+@keyframes chatSlide {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Phase overlay: more drama ---- */
+.phase-overlay-icon { animation: phaseIconBounce 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.4) both, winFloat 2.6s ease-in-out 0.8s infinite; }
+
+/* ---- Death announcement pulse ---- */
+.death-banner { animation: dangerFlash 0.8s ease 0.3s both; }
+@keyframes dangerFlash {
+  0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+  100% { box-shadow: 0 0 0 14px rgba(239,68,68,0); }
+}
+
+/* ---- Keyboard a11y: visible focus ring everywhere ---- */
+.glass-button:focus-visible, .icon-button:focus-visible, .vote-card:focus-visible,
+input:focus-visible, select:focus-visible, .donate-link:focus-visible {
+  outline: 2px solid var(--accent-glow);
+  outline-offset: 2px;
+}

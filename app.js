@@ -393,10 +393,19 @@ function startCountdown(deadline) {
   const tick = () => {
     const el = document.getElementById("phaseCountdown");
     if (!el) return;
-    el.textContent = Math.max(0, Math.round((deadline - Date.now()) / 1000)) + "s";
+    const secs = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    el.textContent = secs + "s";
+    // Pulse red when time is running out so players look up from the discussion.
+    el.classList.toggle("countdown-urgent", secs <= 10);
   };
   tick();
   viewTicker = setInterval(tick, 1000);
+}
+
+// Ambient page tint per game phase (CSS reacts to body[data-phase]).
+function setPhaseAmbience(lobby) {
+  const phase = lobby && lobby.gameStarted ? lobby.phase : "";
+  if (document.body.dataset.phase !== phase) document.body.dataset.phase = phase;
 }
 
 function showModal(contentHtml, onClose) {
@@ -724,15 +733,24 @@ function checkWinCondition(players, lovers = []) {
 function showWinScreen(winner, lobby) {
   currentRender = () => showWinScreen(winner, lobby);
   hideChat();
+  document.body.dataset.phase = "";
   if (winner !== "DRAW") spawnConfetti();
   const emoji = { VILLAGE: "🏘️", WEREWOLF: "🐺", LOVERS: "💘", DRAW: "🤝" }[winner] || "🐺";
   const title = { VILLAGE: t("villageWins"), WEREWOLF: t("werewolfWins"), LOVERS: t("loversWin"), DRAW: t("drawTitle") }[winner] || t("werewolfWins");
   const desc = { VILLAGE: t("villageWinsDesc"), WEREWOLF: t("werewolfWinsDesc"), LOVERS: t("loversWinDesc"), DRAW: t("drawDesc") }[winner] || t("werewolfWinsDesc");
-  render(`<div class="glass-card" style="text-align:center; padding:2.5rem;">
-    <div style="font-size:5rem; margin-bottom:1rem; animation: roleIconPulse 2s infinite;">${emoji}</div>
-    <h1>${title}</h1><p style="margin:1rem 0; opacity:0.8; font-size:1.1rem;">${desc}</p>
-    <div style="margin:1.5rem 0;"><strong>${t("finalStand")}</strong><br>${lobby.players.map(p => `<span class="player-tag ${p.isAlive ? '' : 'dead'}" style="margin:0.2rem;">${escapeHtml(p.name)}: ${roleName(p.role)} ${p.isAlive ? '✅' : '💀'}</span>`).join(' ')}</div>
-    <button class="glass-button" id="backToMenu" style="margin-top:1rem;">${t("backToMenu")}</button>
+  const theme = { VILLAGE: "win-village", WEREWOLF: "win-wolf", LOVERS: "win-lovers", DRAW: "win-draw" }[winner] || "win-wolf";
+  render(`<div class="glass-card win-screen ${theme}">
+    <div class="win-rays"></div>
+    <div class="win-emoji">${emoji}</div>
+    <h1 class="win-title">${title}</h1>
+    <p class="win-desc">${desc}</p>
+    <div class="win-stand">
+      <strong>${t("finalStand")}</strong>
+      <div class="win-stand-tags">
+        ${lobby.players.filter(p => p.role !== "ERZÄHLER").map((p, i) => `<span class="player-tag win-tag ${p.isAlive ? '' : 'dead'}" style="animation-delay:${0.15 + i * 0.08}s;">${getRoleIcon(p.role)} ${escapeHtml(p.name)} · ${roleName(p.role)} ${p.isAlive ? '✅' : '💀'}</span>`).join('')}
+      </div>
+    </div>
+    <button class="glass-button btn-hero" id="backToMenu">${t("backToMenu")}</button>
   </div>`);
   document.getElementById("backToMenu")?.addEventListener("click", async () => {
     try { await deleteDoc(doc(db, "lobbies", lobby.id)); } catch(e) {}
@@ -876,6 +894,7 @@ function buildNightOrder(players, firstNightDone) {
 // ========== RENDER DISPATCHER ==========
 function renderByState(lobby) {
   currentRender = () => renderByState(lobby);
+  setPhaseAmbience(lobby);
   const players = lobby.players || [];
   const currentPlayer = players.find(p => p.id === currentUser.id);
   const isHost = (lobby.hostId === currentUser.id);
@@ -1661,11 +1680,26 @@ function renderPlayerGameView(lobby, player) {
 
     // WEREWOLF
     if (narratorStep === "WEREWOLF" && player.role === "Werwolf") {
+      const wolfVotes = lobby.actionData?.werewolfVotes || {};
+      const aliveWolves = players.filter(p => p.isAlive && p.role === "Werwolf");
+      const votedWolves = aliveWolves.filter(w => wolfVotes[w.id]).length;
+      const packStatus = `<div class="pack-status">${aliveWolves.map(w => `<span class="pack-dot ${wolfVotes[w.id] ? 'voted' : ''}" title="${escapeHtml(w.name)}">🐺</span>`).join('')} <span class="pack-count">${votedWolves}/${aliveWolves.length}</span></div>`;
+
+      // Already voted → live waiting view; a snapshot re-render must not bounce
+      // the wolf back to the picker (same pattern as the seer view).
+      if (wolfVotes[player.id]) {
+        const myTarget = players.find(p => p.id === wolfVotes[player.id]);
+        render(`<div class="glass-card">${baseHeader}<h2>${t("wolfTitle")}</h2><p>${t("wolfWait")}</p>${myTarget ? `<p style="opacity:0.7;">🎯 ${escapeHtml(myTarget.name)}</p>` : ''}${packStatus}</div>`);
+        attachBaseListeners();
+        return;
+      }
+
       const targets = players.filter(p => p.isAlive && p.id !== player.id);
       render(`
         <div class="glass-card">
           ${baseHeader}
           <h2>${t("wolfTitle")}</h2>
+          ${packStatus}
           <div class="vote-grid" id="wolfTargets">${targets.map(tg => `<div class="vote-card" data-id="${tg.id}">${escapeHtml(tg.name)} ${tg.role==='Werwolf'?`<span style="font-size:0.7rem; opacity:0.5;">${t("pack")}</span>`:''}</div>`).join('')}</div>
           <button class="glass-button" id="submitWolfVote">${t("wolfConfirm")}</button>
         </div>
@@ -1895,7 +1929,7 @@ function renderPlayerGameView(lobby, player) {
   const alivePlayers = players.filter(p => p.isAlive && p.role !== "ERZÄHLER");
   const deadPlayers = players.filter(p => !p.isAlive && p.role !== "ERZÄHLER");
   const deathAnnouncement = lastDeaths.length > 0
-    ? `<div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); border-radius:1rem; padding:1rem; margin:1rem 0;">
+    ? `<div class="death-banner" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); border-radius:1rem; padding:1rem; margin:1rem 0;">
         <strong>${t("diedLastNight")}</strong> ${lastDeaths.map(n => `<span style="color:var(--danger); font-weight:600;">${escapeHtml(n)}</span>`).join(", ")}
       </div>`
     : `<div style="background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.3); border-radius:1rem; padding:1rem; margin:1rem 0;">
@@ -1945,30 +1979,51 @@ function flashNameInput() {
 function renderMainMenu() {
   currentRender = renderMainMenu;
   lastRevealId = null;
+  document.body.dataset.phase = "";
   render(`
-    <div class="glass-card" style="max-width: 600px; margin:0 auto;">
-      <h1 style="text-align:center;"><span style="font-size:2.2rem;">🐺</span> WERWOLF MOBILE</h1>
-      <input type="text" id="playerName" placeholder="${t("namePlaceholder")}" value="${escapeHtml(currentUser.name || "")}" style="margin-bottom:0.8rem;">
-      <button class="glass-button" id="quickGameBtn" style="width:100%; font-size:1.05rem; padding:0.9rem;">${t("quickStart")}</button>
-      <p style="text-align:center; opacity:0.55; font-size:0.8rem; margin:0.5rem 0 0.2rem;">${t("quickHint")}</p>
-      <div class="icon-grid">
-        <div class="icon-button" id="createPublicLobby">
-          <i class="fas fa-globe"></i>
-          <span>${t("publicLobby")}</span>
+    <div class="menu-shell">
+      <div class="glass-card menu-card">
+        <div class="hero">
+          <div class="hero-logo"><span class="hero-logo-emoji">🐺</span></div>
+          <h1 class="hero-title">WERWOLF<span class="hero-title-mobile">MOBILE</span></h1>
+          <p class="hero-tagline">${t("heroTagline")}</p>
+          <div class="hero-pills">
+            <span class="hero-pill"><i class="fas fa-masks-theater"></i> ${t("featRoles")}</span>
+            <span class="hero-pill"><i class="fas fa-bolt"></i> ${t("featRealtime")}</span>
+            <span class="hero-pill"><i class="fas fa-comments"></i> ${t("featChat")}</span>
+          </div>
         </div>
-        <div class="icon-button" id="createPrivateLobby">
-          <i class="fas fa-lock"></i>
-          <span>${t("privateLobby")}</span>
+
+        <div class="name-field">
+          <i class="fas fa-user name-field-icon"></i>
+          <input type="text" id="playerName" placeholder="${t("namePlaceholder")}" value="${escapeHtml(currentUser.name || "")}" autocomplete="off">
         </div>
-        <div class="icon-button" id="joinLobbyIcon">
-          <i class="fas fa-sign-in-alt"></i>
-          <span>${t("join")}</span>
+
+        <button class="glass-button btn-hero" id="quickGameBtn"><i class="fas fa-bolt"></i> ${t("quickStart")}</button>
+        <p class="quick-hint">${t("quickHint")}</p>
+
+        <div class="menu-divider"><span>${t("orDivider")}</span></div>
+
+        <div class="icon-grid">
+          <div class="icon-button" id="createPublicLobby">
+            <i class="fas fa-globe"></i>
+            <span>${t("publicLobby")}</span>
+          </div>
+          <div class="icon-button" id="createPrivateLobby">
+            <i class="fas fa-lock"></i>
+            <span>${t("privateLobby")}</span>
+          </div>
+          <div class="icon-button" id="joinLobbyIcon">
+            <i class="fas fa-right-to-bracket"></i>
+            <span>${t("join")}</span>
+          </div>
         </div>
-      </div>
-      <div style="text-align: center; margin-top: 1.5rem;">
-        <a href="https://paypal.me/Emre100120" target="_blank" class="glass-button" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; font-size:0.9rem;">
-          <i class="fab fa-paypal"></i> ${t("donate")}
-        </a>
+
+        <div class="menu-footer">
+          <a href="https://paypal.me/Emre100120" target="_blank" rel="noopener" class="donate-link">
+            <i class="fab fa-paypal"></i> ${t("donate")}
+          </a>
+        </div>
       </div>
     </div>
   `);
