@@ -4,13 +4,13 @@ import {
   initializeFirestore, getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs,
   deleteDoc, getDoc, addDoc, orderBy, limitToLast, runTransaction, arrayUnion, deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js";
+import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=4.1";
 import {
   NARRATOR, MIN_PLAYERS, MAX_PLAYERS, OPTIONAL_ROLES, DAY_TIMES, defaultSettings, QUICK_ROLES,
   defaultActionData, inGame, alivePlayers, byId, hasRoleAlive, roleEnabled, buildRolePool, wolfCountFor,
   buildStartGame, buildRestart, buildAdvance, buildStartVoting, buildHunterShot, buildWinCheck,
   finalizeUpdate, stepDone, voteTally
-} from "./engine.js";
+} from "./engine.js?v=4.1";
 
 // ========== FIREBASE ==========
 const firebaseConfig = {
@@ -158,8 +158,8 @@ function readThemeColors() {
 }
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  const icon = document.querySelector("#theme-toggle i");
-  if (icon) icon.className = theme === "light" ? "fas fa-sun" : "fas fa-moon";
+  const icon = document.querySelector("#theme-toggle .ico");
+  if (icon) icon.textContent = theme === "light" ? "☀️" : "🌙";
   readThemeColors();
 }
 function toggleTheme() {
@@ -995,8 +995,8 @@ function playersPanel(d, me, { showRoles = false } = {}) {
 function gameFooter(d) {
   const isHost = d.hostId === currentUser.id;
   return `<div class="game-footer">
-    <button class="glass-button ghost small" id="leaveLobbyBtn"><i class="fas fa-door-open"></i> ${t("leave")}</button>
-    ${isHost ? `<button class="glass-button ghost small danger-text" id="endGameHost"><i class="fas fa-stop"></i> ${t("endGame")}</button>` : ""}
+    <button class="glass-button ghost small" id="leaveLobbyBtn"><span class="ico" aria-hidden="true">🚪</span> ${t("leave")}</button>
+    ${isHost ? `<button class="glass-button ghost small danger-text" id="endGameHost"><span class="ico" aria-hidden="true">⏹</span> ${t("endGame")}</button>` : ""}
   </div>`;
 }
 
@@ -1021,10 +1021,10 @@ function renderPlayerGameView(d, me) {
   const isYourTurn = !!body.turn;
   render(`<div class="game ${isYourTurn ? "your-turn" : ""}">
     ${gameHeader(d, me)}
-    ${body.hideNews ? "" : newsHtml(d)}
-    ${body.html}
-    ${playersPanel(d, me, { showRoles: !me.isAlive })}
-    ${gameFooter(d)}
+    <div class="game-grid">
+      <div class="game-main">${body.hideNews ? "" : newsHtml(d)}${body.html}</div>
+      <aside class="game-side">${playersPanel(d, me, { showRoles: !me.isAlive })}${gameFooter(d)}</aside>
+    </div>
   </div>`, key);
   if (isYourTurn && screenKey === key && !uiSel.has(key + "|buzzed")) { uiSel.set(key + "|buzzed", 1); buzz([40, 50, 40]); }
   bindGameChrome(d, me);
@@ -1302,6 +1302,7 @@ function renderNarratorDashboard(d) {
 
   render(`<div class="game">
     ${gameHeader(d, null)}
+    <div class="game-grid"><div class="game-main">
     <div class="glass-card stage">
       <h2>🎙️ ${t("narratorConsole")} <span class="tiny muted">${d.code}</span></h2>
       <div class="narrator-script"><strong>${t("script")}</strong><br>${stepScript(d)}</div>
@@ -1309,9 +1310,9 @@ function renderNarratorDashboard(d) {
       ${detail}${hunterHtml}
       ${d.phase !== "HUNTER" ? `<div class="action-bar"><button class="glass-button block" id="narratorNext">${t("phaseNext")} ⏭️</button></div>` : ""}
     </div>
-    ${newsHtml(d)}
-    ${playersPanel(d, null, { showRoles: true })}
-    ${gameFooter(d)}
+    ${newsHtml(d)}</div>
+    <aside class="game-side">${playersPanel(d, null, { showRoles: true })}${gameFooter(d)}</aside>
+    </div>
   </div>`, `${d.gameId}:${d.seq}:narr`);
   bindGameChrome(d, null);
   onAction("narratorNext", () => advance(d));
@@ -1385,7 +1386,7 @@ function renderLobbyView(d, me) {
     <div class="lobby-player ${isPlayerOnline(p.id) ? "" : "is-offline"}">
       ${avatar(p)}<span class="lp-name">${escapeHtml(p.name)}${isMe(p.id) ? ` <span class="tiny muted">(${t("you")})</span>` : ""}</span>
       <span class="lp-marks">${p.id === d.hostId ? "👑" : ""}${p.id === narrId ? "🎙️" : ""}${!isPlayerOnline(p.id) ? `<span class="offline-dot" title="${t("offline")}"></span>` : ""}</span>
-      ${isHost && !isMe(p.id) ? `<button class="icon-btn kick-btn" data-player-id="${escapeHtml(p.id)}" aria-label="${t("kick")}"><i class="fas fa-user-xmark"></i></button>` : ""}
+      ${isHost && !isMe(p.id) ? `<button class="icon-btn kick-btn" data-player-id="${escapeHtml(p.id)}" aria-label="${t("kick")}"><span class="ico" aria-hidden="true">✕</span></button>` : ""}
     </div>`).join("");
 
   let narratorHtml = "";
@@ -1423,19 +1424,21 @@ function renderLobbyView(d, me) {
   else if (local && !narrId) hint = t("needNarrator");
 
   render(`<div class="lobby">
+    <div class="lobby-grid">
     <div class="glass-card stage">
       <div class="lobby-top">
         <div>
           <div class="tiny muted">${t("lobbyCode")} · ${d.isPublic ? "🌍 " + t("public") : "🔒 " + t("private")} · ${local ? "🏠 " + t("local") : "🌐 " + t("online")}</div>
           <button class="code-big" id="copyCode" aria-label="${t("copyCode")}">${d.code}</button>
         </div>
-        <button class="glass-button small" id="shareBtn"><i class="fas fa-share-nodes"></i> ${t("invite")}</button>
+        <button class="glass-button small" id="shareBtn"><span class="ico" aria-hidden="true">📤</span> ${t("invite")}</button>
       </div>
       <div class="panel-title">👥 ${t("players")} <span class="muted">${d.players.length}/${MAX_PLAYERS}</span></div>
       <div class="lobby-players">${playersHtml}</div>
       ${local ? narratorHtml : `<p class="small muted">${t("autoNarrator")}</p>`}
     </div>
     ${settingsHtml}
+    </div>
     <div class="lobby-actions">
       <button class="glass-button ghost" id="leaveLobbyBtn">${t("leave")}</button>
       ${isHost ? `<button class="glass-button grow" id="startGameBtn" ${canStart ? "" : "disabled"}>${t("startGame")}</button>` : `<span class="grow small muted center">${t("waitingForHost")}</span>`}
@@ -1499,21 +1502,25 @@ function renderMainMenu() {
   setPhaseTheme(null);
   render(`
     <div class="glass-card narrow menu">
+      <div class="menu-col">
       <div class="brand"><img src="icon-192.png" alt="" class="brand-icon"><div><h1>WERWOLF</h1><div class="tiny muted">${t("tagline")}</div></div></div>
       <label class="field-label" for="playerName">${t("yourName")}</label>
       <input type="text" id="playerName" placeholder="${t("namePlaceholder")}" value="${escapeHtml(currentUser.name || "")}" maxlength="20" autocomplete="nickname" enterkeyhint="done">
+      </div>
+      <div class="menu-col">
       ${pendingJoinCode ? `<button class="glass-button block big" id="joinPending">🔑 ${t("joinCode", { code: pendingJoinCode })}</button>` : ""}
       <button class="glass-button block big ${pendingJoinCode ? "ghost" : ""}" id="quickGameBtn">${t("quickStart")}</button>
       <p class="tiny muted center" style="margin:.4rem 0 1rem;">${t("quickHint")}</p>
       <div class="icon-grid">
-        <button class="icon-button" id="joinLobbyIcon"><i class="fas fa-right-to-bracket"></i><span>${t("join")}</span></button>
-        <button class="icon-button" id="createPrivateLobby"><i class="fas fa-lock"></i><span>${t("privateLobby")}</span></button>
-        <button class="icon-button" id="createPublicLobby"><i class="fas fa-globe"></i><span>${t("publicLobby")}</span></button>
+        <button class="icon-button" id="joinLobbyIcon"><span class="ib-icon">🔑</span><span>${t("join")}</span></button>
+        <button class="icon-button" id="createPrivateLobby"><span class="ib-icon">🔒</span><span>${t("privateLobby")}</span></button>
+        <button class="icon-button" id="createPublicLobby"><span class="ib-icon">🌍</span><span>${t("publicLobby")}</span></button>
       </div>
       <div class="menu-footer">
-        <a href="https://paypal.me/Emre100120" target="_blank" rel="noopener" class="link-btn"><i class="fab fa-paypal"></i> ${t("donate")}</a>
+        <a href="https://paypal.me/Emre100120" target="_blank" rel="noopener" class="link-btn"><span class="ico" aria-hidden="true">💝</span> ${t("donate")}</a>
         <a href="#" class="link-btn" id="menuImprint">${t("imprint")}</a>
         <a href="#" class="link-btn" id="menuPrivacy">${t("privacy")}</a>
+      </div>
       </div>
     </div>`, "menu");
   $("playerName")?.addEventListener("input", (e) => { currentUser.name = e.target.value.trim(); storageSet(NAME_KEY, currentUser.name); });
@@ -1577,12 +1584,12 @@ function showCreateLobbyModal(type) {
 async function showJoinLobbyModal() {
   const name = requireName(); if (!name) return;
   const m = showModal(`
-    <h3><i class="fas fa-key"></i> ${t("enterCode")}</h3>
+    <h3><span class="ico" aria-hidden="true">🔑</span> ${t("enterCode")}</h3>
     <input type="text" id="codeInput" class="code-input" maxlength="6" placeholder="ABC123" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" value="${escapeHtml(pendingJoinCode || "")}">
     <button class="glass-button block big" id="confirmJoin">${t("join")}</button>
     <div class="panel-title" style="margin-top:1.4rem;display:flex;justify-content:space-between;align-items:center;">
-      <span><i class="fas fa-globe"></i> ${t("joinPublicTitle")}</span>
-      <button class="icon-btn" id="refreshLobbies" aria-label="${t("refresh")}"><i class="fas fa-rotate"></i></button>
+      <span><span class="ico" aria-hidden="true">🌍</span> ${t("joinPublicTitle")}</span>
+      <button class="icon-btn" id="refreshLobbies" aria-label="${t("refresh")}"><span class="ico" aria-hidden="true">🔄</span></button>
     </div>
     <div id="joinModalLobbyList"><div class="loader"></div></div>`, { closeLabel: null });
   const input = m.querySelector("#codeInput");
@@ -1618,9 +1625,9 @@ async function showJoinLobbyModal() {
       listDiv.innerHTML = active.length ? active.map(l => `
         <button class="public-lobby-item" data-join-code="${escapeHtml(l.code)}">
           <span class="public-lobby-code">${escapeHtml(l.code)}</span>
-          <span class="public-lobby-players"><i class="fas fa-users"></i> ${(l.players || []).length}</span>
+          <span class="public-lobby-players"><span class="ico" aria-hidden="true">👥</span> ${(l.players || []).length}</span>
           <span class="public-lobby-host">${escapeHtml((l.players || []).find(p => p.id === l.hostId)?.name || "")}</span>
-          <i class="fas fa-chevron-right"></i>
+          <span class="ico" aria-hidden="true">›</span>
         </button>`).join("") : `<p class="small muted center" style="padding:1rem 0;">${t("noLobbies")}</p>`;
       listDiv.querySelectorAll("[data-join-code]").forEach(b => b.addEventListener("click", () => doJoin(b.dataset.joinCode)));
     } catch (e) { listDiv.innerHTML = `<p class="small muted">${t("loadError")}</p>`; }

@@ -286,6 +286,15 @@ Werwolf-Mobile/
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
 
+## 🔧 v4.1 – Update-Fix & alle Bildschirmgrößen
+
+- **Kaputte Darstellung nach Updates behoben** → Der Browser-Cache (GitHub Pages: 10 Min.) konnte eine neue `index.html` mit altem CSS/JS mischen. Alle Dateien sind jetzt versioniert (`?v=4.1`) und der Service Worker prüft immer auf neue Versionen
+- **Handy quer** → kompakte Kopfleiste, Spiel und Spielerliste nebeneinander, Chat als Seitenleiste
+- **Tablet & Laptop** → zweispaltiges Spiel- und Lobby-Layout, Menü nebeneinander, bis zu 4 Spieler-Karten pro Reihe
+- **Keine Icon-Schrift mehr** → Symbole sind Emoji/Unicode, keine leeren Buttons, wenn ein CDN blockiert ist; schnellerer Start
+
+> **Wichtig bei künftigen Änderungen:** Die Versionsnummer an drei Stellen erhöhen: `?v=` in `index.html`, die Imports in `app.js` und `APP_VERSION` in `service-worker.js`.
+
 ## 🚀 Großes Mobile-Overhaul (v3.0)
 
 ### Niemand fliegt mehr ohne Grund raus
