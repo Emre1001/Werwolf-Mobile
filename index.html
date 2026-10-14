@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Werwolf Mobile – Das ultimative Werwolf-Spiel</title>
   <meta name="description" content="Spiele Werwolf mit Freunden – online oder lokal. 10 Rollen, Echtzeit-Chat, automatischer Erzähler. PWA, DSGVO-konform.">
   <meta name="keywords" content="Werwolf, Werewolf, Mobile, Online, Multiplayer, Kartenspiel, PWA">
@@ -19,6 +19,11 @@
     })();
   </script>
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="engine.js">
+  <link rel="modulepreload" href="i18n.js">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" href="icon-192.png">
@@ -38,36 +43,40 @@
   </noscript>
   <canvas id="particles"></canvas>
 
+  <header class="topbar" id="topbar">
+    <div class="topbar-brand"><img src="icon-192.png" alt=""><span>Werwolf</span></div>
+    <div class="topbar-actions">
+      <select id="lang-select" class="lang-select" aria-label="Language / Sprache"></select>
+      <button id="theme-toggle" class="top-btn" title="Hell-/Dunkelmodus" aria-label="Theme"><i class="fas fa-moon"></i></button>
+      <button id="guide-btn" class="top-btn" title="Spielanleitung" aria-label="Guide"><i class="fas fa-book-open"></i></button>
+    </div>
+  </header>
+
+  <div id="net-banner" class="net-banner" role="status"><i class="fas fa-wifi"></i> <span data-i18n="reconnecting">Verbindung wird wiederhergestellt…</span></div>
+
   <div id="app" class="glass-app">
     <div class="bg-animation"></div>
-    <div class="ui-container" id="ui-container">
+    <main class="ui-container" id="ui-container">
       <div class="loader" style="margin-top: 20vh;"></div>
-    </div>
+    </main>
   </div>
 
-  <select id="lang-select" class="lang-select" aria-label="Language / Sprache"></select>
-
-  <button id="theme-toggle" class="theme-toggle" title="Hell-/Dunkelmodus" aria-label="Theme wechseln">
-    <i class="fas fa-moon"></i>
+  <button id="chat-fab" class="chat-fab" style="display:none;" aria-label="Chat">
+    <i class="fas fa-comments"></i>
+    <span id="chat-badge" class="chat-badge" style="display:none;">0</span>
   </button>
 
-  <button id="guide-btn" class="guide-btn" title="Spielanleitung" aria-label="Spielanleitung">
-    <i class="fas fa-book-open"></i>
-  </button>
-
-  <div id="chat-container" class="chat-container" style="display: none;">
-    <div class="chat-header" id="chat-header">
+  <section id="chat-container" class="chat-container" aria-label="Chat">
+    <div class="chat-header">
       <span id="chat-title">💬 Chat</span>
-      <button id="chat-toggle-btn" class="chat-toggle-btn" aria-label="Chat ein-/ausklappen">−</button>
+      <button id="chat-close" class="chat-toggle-btn" aria-label="Chat schließen"><i class="fas fa-chevron-down"></i></button>
     </div>
-    <div class="chat-body" id="chat-body">
-      <div class="chat-messages" id="chat-messages"></div>
-      <div class="chat-input-area">
-        <input type="text" id="chat-input" placeholder="Nachricht..." data-i18n-ph="chatPlaceholder" maxlength="200" autocomplete="off">
-        <button class="chat-send-btn" id="chat-send" aria-label="Nachricht senden"><i class="fas fa-paper-plane"></i></button>
-      </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+      <input type="text" id="chat-input" placeholder="Nachricht..." data-i18n-ph="chatPlaceholder" maxlength="200" autocomplete="off" enterkeyhint="send">
+      <button class="chat-send-btn" id="chat-send" aria-label="Senden"><i class="fas fa-paper-plane"></i></button>
     </div>
-  </div>
+  </section>
 
   <div id="toast-container" class="toast-container"></div>
 
@@ -105,27 +114,15 @@
     </div>
   </div>
 
-  <div id="offline-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title">
-    <div class="modal-content glass-card" style="max-width: 400px; text-align: center;">
-      <div class="offline-icon-wrap">
-        <i class="fas fa-wifi-slash"></i>
-      </div>
-      <h3 id="offline-modal-title" data-i18n="offlineTitle">Keine Internetverbindung</h3>
-      <p data-i18n="offlineBody" style="margin: 1rem 0; opacity: 0.8;">Bitte überprüfe deine Netzwerkverbindung und versuche es erneut.</p>
-      <button class="glass-button" id="offline-retry" data-i18n="retry">Erneut versuchen</button>
-    </div>
-  </div>
-
   <div id="role-display" class="role-display" style="display: none;">
     <div class="role-display-content glass-card">
       <div class="role-reveal-card">
-        <div class="role-reveal-icon" id="role-reveal-icon">
-          <i class="fas fa-mask"></i>
-        </div>
-        <h3 id="role-name" data-i18n="yourRole">Deine Rolle</h3>
+        <div class="role-reveal-icon" id="role-reveal-icon">🎭</div>
+        <div class="tiny muted" data-i18n="yourRole">Deine Rolle</div>
+        <h2 id="role-name">–</h2>
         <p id="role-description"></p>
         <div class="role-timer-bar"><div class="role-timer-fill" id="role-timer-fill"></div></div>
-        <div class="role-timer" id="role-timer">10</div>
+        <div class="tiny muted role-tap" data-i18n="tapToClose">Tippen zum Schließen</div>
       </div>
     </div>
   </div>

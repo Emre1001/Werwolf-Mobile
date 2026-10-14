@@ -216,6 +216,8 @@ php -S localhost:8000
 ```
 
 > **Hinweis:** Ein lokaler Server ist nötig, da die App ES-Module verwendet.
+>
+> **Firestore:** Die Beitreten-Liste nutzt eine Abfrage auf `gameStarted == false` und `isPublic == true` (kein zusammengesetzter Index nötig).
 
 <br>
 
@@ -225,7 +227,10 @@ php -S localhost:8000
 Werwolf-Mobile/
 ├── index.html          # Haupt-HTML mit allen Overlays und Modals
 ├── style.css           # Komplettes Styling mit Animationen
-├── app.js              # Gesamte Spiellogik und Firebase-Integration
+├── app.js              # UI, Firebase-Sync, Presence & automatischer Erzähler
+├── engine.js           # Reine Spielregeln (ohne DOM/Firebase) – testbar
+├── i18n.js             # 8 Sprachen
+├── tests/              # Regel-Tests + End-to-End-Test (Playwright)
 ├── service-worker.js   # PWA-Caching und Offline-Support
 ├── manifest.json       # Web-App-Manifest für Installation
 ├── icon.png            # App-Icon
@@ -280,6 +285,42 @@ Werwolf-Mobile/
 - **Seherin** → Ergebnis bleibt nach Re-Render sichtbar
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
+
+## 🚀 Großes Mobile-Overhaul (v3.0)
+
+### Niemand fliegt mehr ohne Grund raus
+- **Kein Auto-Kick im Spiel** → Wer kurz weg ist (Display aus, App gewechselt, Funkloch), bleibt im Spiel und wird nur als „offline“ markiert
+- **Uhrzeit-unabhängige Anwesenheit** → Online-Status basiert auf lokal beobachteten Heartbeats statt auf fremden Gerätezeiten (falsch gehende Handy-Uhren haben früher Leute rausgeworfen)
+- **Neu laden = sofort zurück im Spiel** → Sitzung wird gespeichert; nach Reload, App-Wechsel oder Absturz landest du direkt wieder in deiner laufenden Runde
+- **Kein Verlassen beim Schließen** → Früher hat schon ein Reload den Spieler aus der Lobby entfernt
+- **Lobbys werden nicht mehr gelöscht** → Früher hat jeder, der die Beitreten-Liste geöffnet hat, alle Lobbys gelöscht, die älter als 5 Minuten waren
+- **Host-Wechsel ohne Rauswurf** → Ist der Host weg, übernimmt automatisch ein anderer Spieler – der alte Host behält seinen Platz
+- **Bildschirm bleibt an** (Wake Lock) während der Runde, damit das Handy nicht einschläft
+- **Service Worker** fasst Firebase-Verbindungen nicht mehr an (stabilere Echtzeit-Verbindung)
+
+### Spielbarkeit
+- **Kein Sofort-Sieg der Wölfe** → Bei 4 Spielern gab es 2 Wölfe = Wölfe gewinnen sofort. Wolf-Anzahl wird jetzt automatisch ausbalanciert (oder im Host-Menü gewählt)
+- **Ergebnisse für alle sichtbar** → Wer gestorben/hingerichtet wurde (optional mit Rolle), Prinz-Rettung, Jäger-Schuss, Gleichstand
+- **Liebende wissen voneinander**, **Wölfe sehen ihr Rudel** und die Stimmen der anderen Wölfe live
+- **Seherin** behält alle Visionen, **Hexe** wählt Heilen/Vergiften in einem Schritt
+- **„Bereit zur Abstimmung“** → Mehrheit bereit = Abstimmung startet sofort; Diskussionszeit einstellbar
+- **Stimme ändern** möglich; offline Spieler blockieren die Abstimmung nicht
+- **Nochmal spielen** → Nach Spielende startet der Host mit einem Tipp eine neue Runde in derselben Lobby
+- **Einladungslink** (`?join=CODE`) + Teilen-Button, kein Nachtschritt verrät mehr, welche Rolle schon tot ist
+- **Transaktionssichere Phasen** → Jeder Phasenwechsel läuft in einer Firestore-Transaktion mit Sequenz-Wächter: nie doppelt, nie eingefroren (notfalls schiebt jeder Spieler eine abgelaufene Phase weiter)
+
+### Handy-UI
+- Feste Kopfleiste, große Spieler-Karten mit Avataren, Aktions-Button immer unten im Daumenbereich
+- Chat als Bottom-Sheet mit Button & Ungelesen-Zähler (verdeckt keine Buttons mehr), bleibt über der Tastatur
+- Keine iOS-Zoom-Sprünge bei Eingaben, kein 300-ms-Tap-Delay, Vibrations-Feedback wenn du dran bist
+- Flüssiger: Live-Updates ohne Flackern, gedrosselte Partikel (30 fps, pausiert im Hintergrund), weniger teure Blur-Effekte auf dem Handy
+- Rolle ist verdeckt und nur per Tipp sichtbar (Schutz vor Mitlesen)
+
+### Tests
+```bash
+node tests/engine.test.mjs                               # Regeln + 4000 zufällige Komplettspiele
+python3 -m http.server 8765 & node tests/e2e.mjs         # 5 Browser spielen eine echte Partie (benötigt: npm i playwright)
+```
 
 ## 📲 Installations-Leiste (iOS & Android)
 
