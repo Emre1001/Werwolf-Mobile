@@ -77,7 +77,7 @@ async function handle(page, op, args) {
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" }).catch(() => chromium.launch());
 const errors = [];
 async function newPlayer(i, name, url = BASE) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: process.env.SCHEME || "light" });
+  const ctx = await browser.newContext({ viewport: { width: Number(process.env.VW || 390), height: Number(process.env.VH || 844) }, deviceScaleFactor: 1, isMobile: !process.env.DESKTOP, hasTouch: !process.env.DESKTOP, colorScheme: process.env.SCHEME || "light" });
   await ctx.addInitScript(([n]) => { localStorage.setItem("werwolf_consent_given", "true"); localStorage.setItem("ww_name", n); localStorage.setItem("ww_lang", "de"); localStorage.setItem("ww_install_dismissed", String(Date.now())); }, [name]);
   await ctx.route(/gstatic\.com\/firebasejs\/.*firebase-app\.js/, r => r.fulfill({ contentType: "text/javascript", body: "export const initializeApp = () => ({});" }));
   await ctx.route(/gstatic\.com\/firebasejs\/.*firebase-firestore\.js/, r => r.fulfill({ contentType: "text/javascript", body: mockFs }));
