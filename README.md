@@ -286,6 +286,17 @@ Werwolf-Mobile/
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
 
+## ✨ v5.0 – Animationen & Theme-Wechsel
+
+- **Dark/Light-Wechsel mit Kreis-Reveal** → Der neue Modus wächst als Kreis aus dem Theme-Button über die ganze Seite (View Transitions API), der alte Zustand schrumpft und dimmt dabei. Der Button morpht Sonne ⇄ Mond (Strahlen klappen ein, Mondsichel schiebt sich ins Bild), dazu ein Ring-Impuls und Vibration
+- **Fallback für andere Browser** → Ohne View Transitions blendet die komplette Farbpalette weich über (typisierte `@property`-Farben); mit „Bewegung reduzieren“ wird sofort umgeschaltet
+- **Lebendige Szene** → Nachts funkelnde Sterne, Sternschnuppen und ein Mond mit Kratern; tagsüber eine Sonne mit drehenden Strahlen und ziehende Wolken. Die Spielphase (Nacht/Tag/Abstimmung) blendet den Himmel weich um. Partikelfarben gleiten beim Themenwechsel mit
+- **Einstieg** → Menü, Karten, Spieler und Rollen poppen gestaffelt ein; Live-Updates spielen die Animationen nicht noch einmal ab (kein Flackern)
+- **Feedback** → Ripple-Effekt auf Buttons, Federn beim Auswählen, Glanz auf den Haupt-Buttons, leuchtender Rahmen wenn du dran bist, neue Lobby-Spieler poppen herein, Chat-Button wackelt bei neuen Nachrichten, Toasts mit Countdown-Balken
+- **Phasenwechsel & Rolle** → Mond/Sonne fliegen mit Ringwellen ein, die Rollenkarte dreht sich mit rotierendem Leuchten auf, der Siegtext schimmert
+- **Wird ausgeschaltet** bei „Bewegung reduzieren“; alle Animationen nutzen nur Transform/Opacity und sind für Handys optimiert
+- Test: `node tests/theme.mjs` prüft den Wechsel (Reveal, Fallback, Speichern, Reload, Reduced Motion)
+
 ## 🔧 v4.1 – Update-Fix & alle Bildschirmgrößen
 
 - **Kaputte Darstellung nach Updates behoben** → Der Browser-Cache (GitHub Pages: 10 Min.) konnte eine neue `index.html` mit altem CSS/JS mischen. Alle Dateien sind jetzt versioniert (`?v=4.1`) und der Service Worker prüft immer auf neue Versionen

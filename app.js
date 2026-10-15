@@ -4,13 +4,13 @@ import {
   initializeFirestore, getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs,
   deleteDoc, getDoc, addDoc, orderBy, limitToLast, runTransaction, arrayUnion, deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=4.1";
+import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=5.0";
 import {
   NARRATOR, MIN_PLAYERS, MAX_PLAYERS, OPTIONAL_ROLES, DAY_TIMES, defaultSettings, QUICK_ROLES,
   defaultActionData, inGame, alivePlayers, byId, hasRoleAlive, roleEnabled, buildRolePool, wolfCountFor,
   buildStartGame, buildRestart, buildAdvance, buildStartVoting, buildHunterShot, buildWinCheck,
   finalizeUpdate, stepDone, voteTally
-} from "./engine.js?v=4.1";
+} from "./engine.js?v=5.0";
 
 // ========== FIREBASE ==========
 const firebaseConfig = {
@@ -148,29 +148,88 @@ function buildLangPicker() {
 }
 
 const THEME_KEY = "ww_theme";
-let particleRGB = "96, 165, 250";
-let lineRGB = "56, 189, 248";
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const parseRGB = (str, fallback) => { const a = String(str).split(",").map(x => parseFloat(x)); return a.length === 3 && a.every(Number.isFinite) ? a : fallback; };
+// Particle colours glide towards the theme's colours instead of snapping.
+const pColor = { cur: [96, 165, 250], target: [96, 165, 250] };
+const lColor = { cur: [56, 189, 248], target: [56, 189, 248] };
 function readThemeColors() {
   const cs = getComputedStyle(document.documentElement);
-  particleRGB = cs.getPropertyValue("--particle-rgb").trim() || particleRGB;
-  lineRGB = cs.getPropertyValue("--line-rgb").trim() || lineRGB;
+  pColor.target = parseRGB(cs.getPropertyValue("--particle-rgb"), pColor.target);
+  lColor.target = parseRGB(cs.getPropertyValue("--line-rgb"), lColor.target);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", cs.getPropertyValue("--meta-color").trim() || "#0a1733");
 }
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  const icon = document.querySelector("#theme-toggle .ico");
-  if (icon) icon.textContent = theme === "light" ? "☀️" : "🌙";
+  document.documentElement.style.colorScheme = theme;
+  $("theme-toggle")?.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
   readThemeColors();
 }
-function toggleTheme() {
-  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-  storageSet(THEME_KEY, next);
-  applyTheme(next);
+
+let themeBusy = false;
+// Dark ⇄ light: a circle of the new theme grows out of the toggle button (View Transitions API).
+// Browsers without it get a smooth colour cross-fade (registered @property colour tokens).
+function toggleTheme(e) {
+  if (themeBusy) return;
+  const root = document.documentElement;
+  const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+  const commit = () => { storageSet(THEME_KEY, next); applyTheme(next); };
+  const btn = $("theme-toggle");
+  const rect = btn?.getBoundingClientRect();
+  const x = e && e.clientX ? e.clientX : rect ? rect.left + rect.width / 2 : innerWidth - 40;
+  const y = e && e.clientY ? e.clientY : rect ? rect.top + rect.height / 2 : 30;
+  buzz(12);
+  if (reduceMotion()) { commit(); return; }
+
+  // expanding ring at the button
+  if (btn) {
+    const ring = document.createElement("span");
+    ring.className = "theme-ring";
+    btn.appendChild(ring);
+    ring.addEventListener("animationend", () => ring.remove());
+  }
+  themeBusy = true;
+  const done = () => { themeBusy = false; root.classList.remove("theme-switching", "theme-fade"); };
+
+  if (typeof document.startViewTransition === "function") {
+    root.classList.add("theme-switching"); // no CSS transitions while the browser captures the new state
+    let vt;
+    try { vt = document.startViewTransition(commit); } catch { commit(); done(); return; }
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    vt.ready.then(() => {
+      root.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration: 800, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" }
+      );
+      // the old theme dims and shrinks slightly while it is being covered
+      root.animate(
+        { transform: ["scale(1)", "scale(0.97)"], opacity: [1, 0.6] },
+        { duration: 800, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards", pseudoElement: "::view-transition-old(root)" }
+      );
+    }).catch(() => {});
+    vt.finished.then(done, done);
+  } else {
+    root.classList.add("theme-fade");
+    commit();
+    setTimeout(done, 900);
+  }
 }
 function initTheme() {
   const mq = window.matchMedia("(prefers-color-scheme: light)");
   applyTheme(storageGet(THEME_KEY) || (mq.matches ? "light" : "dark"));
   mq.addEventListener?.("change", (e) => { if (!storageGet(THEME_KEY)) applyTheme(e.matches ? "light" : "dark"); });
+  // Sky: three layers of tiny stars (generated once, animated via opacity only → very cheap).
+  const layers = document.querySelectorAll("#stars i");
+  const count = innerWidth < 760 ? 26 : 48;
+  layers.forEach((el, li) => {
+    const shadows = [];
+    for (let i = 0; i < count; i++) {
+      const sz = [0, 0, 1][Math.floor(Math.random() * 3)];
+      shadows.push(`${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 100).toFixed(1)}vh 0 ${sz}px rgba(255,255,255,${(0.5 + Math.random() * 0.5).toFixed(2)})`);
+    }
+    el.style.boxShadow = shadows.join(",");
+    el.style.animationDelay = (-li * 1.7) + "s";
+  });
 }
 
 // ========== TOASTS ==========
@@ -181,6 +240,7 @@ function showToast(msg, type = "info", ms = 3200) {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.setAttribute("role", "status");
+  toast.style.setProperty("--dur", ms + "ms");
   toast.textContent = msg;
   toast.addEventListener("click", () => toast.remove());
   container.appendChild(toast);
@@ -214,6 +274,8 @@ function initParticles() {
     if (document.hidden || ts - last < 33) return; // ~30 fps is plenty and saves battery
     last = ts;
     ctx.clearRect(0, 0, w, h);
+    for (let k = 0; k < 3; k++) { pColor.cur[k] += (pColor.target[k] - pColor.cur[k]) * 0.12; lColor.cur[k] += (lColor.target[k] - lColor.cur[k]) * 0.12; }
+    const particleRGB = pColor.cur.map(Math.round).join(","), lineRGB = lColor.cur.map(Math.round).join(",");
     ctx.fillStyle = `rgba(${particleRGB}, 0.5)`;
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
@@ -338,6 +400,8 @@ function spawnConfetti() {
 function render(html, key = null) {
   const same = key !== null && key === screenKey;
   const y = window.scrollY;
+  // Live updates of the same screen must not replay the entrance animations.
+  if (same) ui.classList.remove("screen-enter");
   ui.innerHTML = html;
   if (same) { window.scrollTo(0, y); return; }
   screenKey = key;
@@ -345,8 +409,11 @@ function render(html, key = null) {
   ui.classList.remove("screen-enter");
   void ui.offsetWidth;
   ui.classList.add("screen-enter");
+  clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => ui.classList.remove("screen-enter"), 1500);
   window.scrollTo(0, 0);
 }
+let enterTimer = null;
 
 // Tap-to-select list of player cards. Selection survives live re-renders of the same screen.
 function bindPicker(gridId, { multi = 0, initial = null, allowNone = false, onChange } = {}) {
@@ -373,6 +440,8 @@ function bindPicker(gridId, { multi = 0, initial = null, allowNone = false, onCh
     uiSel.set(k, sel);
     buzz(8);
     paint();
+    c.classList.remove("pop"); void c.offsetWidth; c.classList.add("pop");
+    c.addEventListener("animationend", () => c.classList.remove("pop"), { once: true });
     onChange?.(sel);
   });
   paint();
@@ -485,8 +554,10 @@ document.addEventListener("visibilitychange", () => {
 function saveSession(code) { storageSet(SESSION_KEY, code); }
 function clearSession() { storageDel(SESSION_KEY); }
 
+const seenLobbyPlayers = new Set();
 function enterLobby(code) {
   detachLobby(false);
+  seenLobbyPlayers.clear();
   currentLobbyId = code;
   saveSession(code);
   presence.hb = {}; presence.seenAt = {};
@@ -801,6 +872,7 @@ let chatChannel = null;
 let chatOpen = false;
 let chatReadAt = {};
 let lastChatSend = 0;
+let lastUnread = 0;
 
 function chatChannelFor(d, me) {
   if (!d || !me || d.mode === "lokal" || me.role === NARRATOR) return null;
@@ -852,6 +924,8 @@ function updateChatUI() {
   if (chatOpen) chatReadAt[readKey] = msgs.length;
   const unread = Math.max(0, msgs.length - (chatReadAt[readKey] || 0));
   const badge = $("chat-badge");
+  if (unread > lastUnread) { fab.classList.remove("bump"); void fab.offsetWidth; fab.classList.add("bump"); }
+  lastUnread = unread;
   badge.textContent = unread > 9 ? "9+" : String(unread);
   badge.style.display = unread ? "flex" : "none";
   if (!chatOpen) return;
@@ -1383,11 +1457,15 @@ function renderLobbyView(d, me) {
   const s = d.settings || defaultSettings();
 
   const playersHtml = d.players.map(p => `
-    <div class="lobby-player ${isPlayerOnline(p.id) ? "" : "is-offline"}">
+    <div class="lobby-player ${isPlayerOnline(p.id) ? "" : "is-offline"} ${seenLobbyPlayers.size && !seenLobbyPlayers.has(p.id) ? "pop" : ""}">
       ${avatar(p)}<span class="lp-name">${escapeHtml(p.name)}${isMe(p.id) ? ` <span class="tiny muted">(${t("you")})</span>` : ""}</span>
       <span class="lp-marks">${p.id === d.hostId ? "👑" : ""}${p.id === narrId ? "🎙️" : ""}${!isPlayerOnline(p.id) ? `<span class="offline-dot" title="${t("offline")}"></span>` : ""}</span>
       ${isHost && !isMe(p.id) ? `<button class="icon-btn kick-btn" data-player-id="${escapeHtml(p.id)}" aria-label="${t("kick")}"><span class="ico" aria-hidden="true">✕</span></button>` : ""}
     </div>`).join("");
+
+  const popped = d.players.some(p => seenLobbyPlayers.size && !seenLobbyPlayers.has(p.id));
+  d.players.forEach(p => seenLobbyPlayers.add(p.id));
+  if (popped) buzz(10);
 
   let narratorHtml = "";
   if (local) {
@@ -1636,6 +1714,23 @@ async function showJoinLobbyModal() {
   if (firebaseReady) load(); else m.querySelector("#joinModalLobbyList").innerHTML = `<p class="small muted">${t("loadError")}</p>`;
 }
 
+// Material-style press ripple for buttons and chips (compositor-only, removed when finished).
+function initRipples() {
+  if (reduceMotion()) return;
+  const SEL = ".glass-button, .icon-button, .chip-toggle, .public-lobby-item, .toggle-row, .role-chip, .top-btn:not(.theme-toggle), .segmented button";
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest?.(SEL);
+    if (!el || el.disabled) return;
+    const r = el.getBoundingClientRect();
+    const size = Math.max(r.width, r.height) * 2.2;
+    const s = document.createElement("span");
+    s.className = "ripple";
+    s.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
+    el.appendChild(s);
+    s.addEventListener("animationend", () => s.remove());
+  }, { passive: true });
+}
+
 // ========== INIT ==========
 document.addEventListener("DOMContentLoaded", () => {
   initLang();
@@ -1661,6 +1756,7 @@ document.addEventListener("DOMContentLoaded", () => {
   } catch {}
 
   $("theme-toggle")?.addEventListener("click", toggleTheme);
+  initRipples();
   $("accept-consent")?.addEventListener("click", acceptConsent);
   $("reject-consent")?.addEventListener("click", rejectConsent);
   $("show-impressum")?.addEventListener("click", (e) => { e.preventDefault(); showImpressum(); });

@@ -1,5 +1,5 @@
 // Bump APP_VERSION together with the ?v= query strings in index.html / app.js.
-const APP_VERSION = "4.1";
+const APP_VERSION = "5.0";
 const CACHE_NAME = "werwolf-pwa-" + APP_VERSION;
 const V = "?v=" + APP_VERSION;
 const urls = ["./", "./index.html", "./style.css" + V, "./app.js" + V, "./engine.js" + V, "./i18n.js" + V, "./manifest.json", "./icon-192.png", "./icon-512.png"];
