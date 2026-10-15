@@ -12,7 +12,7 @@
 @property --bg-2 { syntax: '<color>'; inherits: true; initial-value: #0f1f47; }
 @property --text { syntax: '<color>'; inherits: true; initial-value: #eaf1ff; }
 @property --text-dim { syntax: '<color>'; inherits: true; initial-value: rgba(234, 241, 255, 0.72); }
-@property --card-bg { syntax: '<color>'; inherits: true; initial-value: rgba(16, 32, 72, 0.45); }
+@property --card-bg { syntax: '<color>'; inherits: true; initial-value: rgba(16, 32, 72, 0.72); }
 @property --card-border { syntax: '<color>'; inherits: true; initial-value: rgba(96, 165, 250, 0.28); }
 @property --surface { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.05); }
 @property --surface-2 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0.35); }
@@ -32,7 +32,7 @@
   --accent-light: #60a5fa;
   --accent-glow: #38bdf8;
   --accent-glow-soft: #7dd3fc;
-  --card-bg: rgba(16, 32, 72, 0.45);
+  --card-bg: rgba(16, 32, 72, 0.72);
   --card-border: rgba(96, 165, 250, 0.28);
   --text: #eaf1ff;
   --text-dim: rgba(234, 241, 255, 0.72);
@@ -69,7 +69,7 @@
   --accent-light: #3b82f6;
   --accent-glow: #0ea5e9;
   --accent-glow-soft: #38bdf8;
-  --card-bg: rgba(255, 255, 255, 0.72);
+  --card-bg: rgba(255, 255, 255, 0.82);
   --card-border: rgba(37, 99, 235, 0.18);
   --text: #0c1c3d;
   --text-dim: rgba(12, 28, 61, 0.7);
@@ -88,7 +88,7 @@
     --bg-0: #cfe0ff; --bg-1: #e8f1ff; --bg-2: #ffffff;
     --accent: #2563eb; --accent-strong: #1d4ed8; --accent-light: #3b82f6;
     --accent-glow: #0ea5e9; --accent-glow-soft: #38bdf8;
-    --card-bg: rgba(255, 255, 255, 0.72); --card-border: rgba(37, 99, 235, 0.18);
+    --card-bg: rgba(255, 255, 255, 0.82); --card-border: rgba(37, 99, 235, 0.18);
     --text: #0c1c3d; --text-dim: rgba(12, 28, 61, 0.7);
     --surface: rgba(37, 99, 235, 0.05); --surface-2: rgba(37, 99, 235, 0.06);
     --shadow: 0 25px 45px -14px rgba(37, 99, 235, 0.18);
@@ -285,7 +285,7 @@ input::placeholder { color: var(--text-dim); opacity: 0.7; }
 .menu { display: flex; flex-direction: column; gap: 0.6rem; }
 .menu #playerName { margin-bottom: 0.4rem; font-size: 1.1rem; }
 .brand { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 0.6rem; }
-.brand h1 { margin: 0; font-size: 1.9rem; letter-spacing: 0.06em; }
+.brand h1 { margin: 0; font-size: clamp(1.3rem, 7.5vw, 1.9rem); letter-spacing: 0.06em; }
 .brand-icon { width: 64px; height: 64px; border-radius: 18px; box-shadow: 0 10px 25px -8px rgba(37, 99, 235, 0.7); }
 .icon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
 .icon-button {
@@ -310,7 +310,7 @@ input::placeholder { color: var(--text-dim); opacity: 0.7; }
 .avatar.sm { width: 30px; height: 30px; font-size: 0.85rem; }
 
 /* ========== PICK GRID (targets) ========== */
-.pick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin: 0.9rem 0; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--pick-min, 8rem), 100%), 1fr)); gap: 0.55rem; margin: 0.9rem 0; }
 .pick-grid.compact .pick { min-height: 54px; padding: 0.45rem 0.6rem; }
 .pick {
   position: relative; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
@@ -319,7 +319,7 @@ input::placeholder { color: var(--text-dim); opacity: 0.7; }
   cursor: pointer; transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
 }
 .pick:active { transform: scale(0.97); }
-.pick-name { font-weight: 700; font-size: 0.95rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pick-name { font-weight: 700; font-size: 0.95rem; flex: 1; min-width: 0; overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto; }
 .pick-sub { flex-basis: 100%; font-size: 0.72rem; color: var(--text-dim); line-height: 1.25; }
 .pick-badge {
   position: absolute; top: -7px; right: -5px; min-width: 24px; height: 24px; padding: 0 6px;
@@ -344,7 +344,6 @@ input::placeholder { color: var(--text-dim); opacity: 0.7; }
   display: flex; gap: 0.6rem; align-items: center; margin-top: 0.8rem;
 }
 .action-bar > .glass-button { flex: 1; }
-body.has-chat .action-bar { padding-right: 4.2rem; }
 
 /* ========== GAME ========== */
 .game { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -390,7 +389,7 @@ body.has-chat .action-bar { padding-right: 4.2rem; }
 .panel-title { font-weight: 800; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin-bottom: 0.55rem; }
 .mini-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
 .mini { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; padding: 0.4rem 0.5rem; border-radius: 12px; background: var(--surface); min-width: 0; }
-.mini-name { font-weight: 600; font-size: 0.85rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mini-name { font-weight: 600; font-size: 0.85rem; flex: 1; min-width: 0; overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto; }
 .mini-role { flex-basis: 100%; font-size: 0.72rem; color: var(--text-dim); }
 .mini.dead { opacity: 0.55; }
 .mini.dead .mini-name { text-decoration: line-through; }
@@ -423,7 +422,8 @@ body.has-chat .action-bar { padding-right: 4.2rem; }
 
 /* ========== LOBBY ========== */
 .lobby { display: flex; flex-direction: column; gap: 0.75rem; }
-.lobby-top { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
+.lobby-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.9rem; }
+.lobby-top #shareBtn { flex-shrink: 0; white-space: nowrap; }
 .code-big {
   display: block; background: none; border: none; cursor: pointer; padding: 0; margin-top: 0.15rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2.2rem; font-weight: 900; letter-spacing: 0.14em;
@@ -432,7 +432,7 @@ body.has-chat .action-bar { padding-right: 4.2rem; }
 .lobby-players { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.7rem; }
 .lobby-player { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.55rem; border-radius: 14px; background: var(--surface); }
 .lobby-player.is-offline { opacity: 0.6; }
-.lp-name { flex: 1; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.lp-name { flex: 1; font-weight: 700; min-width: 0; overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto; }
 .lp-marks { display: inline-flex; align-items: center; gap: 0.3rem; }
 .lobby-actions {
   position: sticky; bottom: calc(0.6rem + var(--safe-bottom)); z-index: 5;
@@ -440,7 +440,6 @@ body.has-chat .action-bar { padding-right: 4.2rem; }
   padding: 0.6rem; border-radius: 18px; background: var(--card-bg); border: 1px solid var(--card-border);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: var(--shadow);
 }
-body.has-chat .lobby-actions { margin-right: 4.2rem; }
 
 .chip-grid { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.4rem 0 0.6rem; }
 .chip-toggle {
@@ -619,7 +618,7 @@ body.has-chat .lobby-actions { margin-right: 4.2rem; }
 .chat-toggle-btn { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; background: rgba(255, 255, 255, 0.15); color: #fff; }
 .chat-toggle-btn i { color: #fff; }
 .chat-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem; }
-.chat-msg { padding: 0.45rem 0.75rem; border-radius: 14px; background: var(--surface); max-width: 85%; overflow-wrap: anywhere; align-self: flex-start; border: 1px solid var(--card-border); }
+.chat-msg { padding: 0.45rem 0.75rem; border-radius: 14px; background: var(--surface); max-width: 85%; overflow-wrap: break-word; word-break: normal; hyphens: auto; -webkit-hyphens: auto; align-self: flex-start; border: 1px solid var(--card-border); }
 .chat-msg-own { background: rgba(37, 99, 235, 0.3); align-self: flex-end; }
 .chat-msg-wolf { background: rgba(220, 38, 38, 0.2); border-color: rgba(239, 68, 68, 0.3); }
 .chat-msg-dead { background: rgba(100, 116, 139, 0.2); font-style: italic; }
@@ -689,7 +688,7 @@ body.has-chat .lobby-actions { margin-right: 4.2rem; }
   .glass-app { padding-top: 1.4rem; }
   .glass-card { padding: 1.5rem; }
   h1 { font-size: 2rem; }
-  .pick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pick-grid { --pick-min: 9.5rem; }
   .mini-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .modal, .choice-modal-overlay, .guide-overlay { align-items: center; padding: 1rem; }
   .modal-content, .guide-container { border-radius: 22px; padding-bottom: 1.4rem; }
@@ -713,7 +712,6 @@ body.has-chat .lobby-actions { margin-right: 4.2rem; }
   .win-card.narrow { max-width: 760px; }
 }
 @media (min-width: 1280px) {
-  .pick-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .glass-app { padding-top: 2rem; }
 }
 
@@ -737,7 +735,7 @@ body.has-chat .lobby-actions { margin-right: 4.2rem; }
   .phase-icon { font-size: 1.2rem; }
   .countdown { padding: 0.35rem 0.6rem; font-size: 0.95rem; }
   .role-chip { min-height: 36px; }
-  .pick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; margin: 0.6rem 0; }
+  .pick-grid { --pick-min: 7.5rem; gap: 0.45rem; margin: 0.6rem 0; }
   .pick { min-height: 50px; padding: 0.4rem 0.55rem; }
   .avatar { width: 32px; height: 32px; font-size: 0.9rem; }
   .action-bar { margin-top: 0.5rem; }
@@ -763,7 +761,6 @@ body.has-chat .lobby-actions { margin-right: 4.2rem; }
 
 /* ========== SMALL PHONES ========== */
 @media (max-width: 360px) {
-  .pick-grid { grid-template-columns: 1fr; }
   .icon-button span { font-size: 0.72rem; }
   .topbar-brand span { display: none; }
 }
@@ -977,7 +974,7 @@ body[data-phase="VOTING"] .phase-icon { animation: floaty 2.4s ease-in-out infin
 .lobby-player.pop { animation: popIn 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.3); }
 .chat-fab.bump { animation: fabBump 0.6s ease; }
 @keyframes fabBump { 30% { transform: scale(1.25) rotate(-12deg); } 60% { transform: scale(0.95) rotate(6deg); } }
-.chat-msg { animation: msgPop 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.chat-msg.new { animation: msgPop 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
 @keyframes msgPop { from { opacity: 0; transform: translateY(8px) scale(0.95); } to { opacity: 1; transform: none; } }
 .toast { position: relative; overflow: hidden; }
 .toast::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--info); transform-origin: left; animation: toastBar var(--dur, 3.2s) linear forwards; }
@@ -1026,4 +1023,114 @@ body[data-phase="VOTING"] .phase-icon { animation: floaty 2.4s ease-in-out infin
   .loader { animation: spin 0.8s linear infinite !important; }
   .stars i { opacity: 0.8; }
   .theme-ring, .ripple { display: none; }
+}
+
+/* =====================================================================
+   v5.1 DEVICE FIXES – every screen from 280 px foldables to 1440p
+   ===================================================================== */
+:root { --card-solid: color-mix(in srgb, var(--bg-1) 94%, transparent); }
+@supports not (background: color-mix(in srgb, red 50%, transparent)) { :root { --card-solid: var(--bg-1); } }
+.glass-card { --pad: 1.2rem; padding: var(--pad); }
+@media (min-width: 760px) { .glass-card { --pad: 1.5rem; } }
+@media (orientation: landscape) and (max-height: 540px) { .glass-card { --pad: 0.9rem; } }
+
+/* Header pills, news and chips sit on solid ground (no moon/shooting star shining through). */
+.phase-pill, .countdown:not(.urgent), .role-chip { background-color: var(--card-solid); }
+.role-chip { background-image: linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(37, 99, 235, 0.35)); }
+.news { background-color: var(--card-solid); background-image: linear-gradient(var(--surface-2), var(--surface-2)); }
+.news.bad { background-image: linear-gradient(rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.16)); }
+.news.good { background-image: linear-gradient(rgba(34, 197, 94, 0.16), rgba(34, 197, 94, 0.16)); }
+
+/* Sticky action bar inside a card: own backing so cards scrolling under it stay readable. */
+.stage > .action-bar {
+  margin: 0.6rem calc(-1 * var(--pad)) calc(-1 * var(--pad) + 0.4rem);
+  padding: 1rem var(--pad) 0.6rem;
+  background: linear-gradient(to bottom, transparent, var(--card-solid) 38%);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.action-bar { flex-wrap: wrap; }
+.action-bar > .glass-button { flex: 1 1 150px; }
+.glass-button { text-align: center; line-height: 1.2; }
+
+/* The chat button moves up instead of squeezing the bottom buttons. */
+.chat-fab { transition: bottom 0.3s ease, transform 0.15s ease; }
+body.has-chat:has(.action-bar) .chat-fab, body.has-chat:has(.lobby-actions) .chat-fab { bottom: calc(5.6rem + var(--safe-bottom)); }
+body.has-chat:has(.action-bar) .glass-app, body.has-chat:has(.lobby-actions) .glass-app { padding-bottom: calc(7rem + var(--safe-bottom)); }
+@supports not selector(:has(*)) {
+  @media (min-width: 760px) and (min-height: 541px) {
+    body.has-chat .action-bar { padding-right: 4.2rem; }
+    body.has-chat .lobby-actions { margin-right: 4.2rem; }
+  }
+}
+
+/* Moon: softer so it reads as background. */
+:root[data-theme="dark"] body:not([data-phase="DAY"]):not([data-phase="VOTING"]) .moon-glow { opacity: 0.85; }
+
+/* Foldable cover screens and tiny phones */
+@media (max-width: 340px) {
+  .glass-card { --pad: 0.9rem; }
+  .glass-app { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .icon-grid { gap: 0.4rem; }
+  .icon-button { min-height: 80px; }
+  .icon-button span { font-size: 0.7rem; }
+  .brand-icon { width: 52px; height: 52px; }
+  .game-head { flex-wrap: wrap; }
+  .phase-pill { flex-basis: 100%; }
+  .role-chip, .countdown { flex: 1; justify-content: center; text-align: center; }
+  .code-big { font-size: 1.8rem; letter-spacing: 0.08em; }
+  .mini-list { grid-template-columns: 1fr; }
+  .segmented button { min-width: 34px; padding: 0 0.45rem; }
+}
+
+/* Very small landscape phones: one column reads better than two cramped ones. */
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 699px) {
+  .game-grid, .lobby-grid { display: flex; }
+  .game-side { position: static; max-height: none; overflow: visible; }
+  .menu.narrow { display: flex; }
+}
+
+/* Large screens: scale the whole UI up and centre it instead of a small strip at the top. */
+@media (min-width: 1440px) { html { font-size: 17px; } }
+@media (min-width: 1800px) { html { font-size: 19px; } }
+@media (min-width: 2400px) { html { font-size: 23px; } }
+@media (min-width: 1440px) {
+  .ui-container { max-width: 74rem; }
+  .avatar { width: 2.5rem; height: 2.5rem; }
+  .avatar.sm { width: 1.9rem; height: 1.9rem; }
+  .top-btn, .lang-select { height: 2.6rem; min-width: 2.6rem; }
+  :root { --topbar-h: 3.6rem; }
+  .topbar-brand img { width: 2rem; height: 2rem; }
+  .theme-svg { width: 1.5rem; height: 1.5rem; }
+  .chat-container { width: 26rem; height: 34rem; }
+  .menu.narrow { max-width: 58rem; }
+}
+@media (min-width: 960px) and (min-height: 700px) {
+  .glass-app { align-items: center; }
+  .glass-app:has(.game, .lobby) { align-items: flex-start; }
+}
+
+/* Chat entry point: in the top bar on phones (portrait + landscape) so it never covers buttons,
+   floating button on tablets and laptops. */
+.chat-top { position: relative; overflow: visible !important; }
+.chat-top .chat-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; font-size: 0.65rem; border-width: 2px; }
+.chat-top.active { background: var(--accent-strong); }
+.chat-top[data-channel="wolf"] { border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.18); }
+.chat-top[data-channel="dead"] { border-color: rgba(148, 163, 184, 0.6); }
+.chat-top.bump { animation: fabBump 0.6s ease; }
+.chat-top.pulse { animation: fabPulse 1.4s ease-in-out 3; }
+@media (max-width: 759px), (max-height: 540px) {
+  .chat-fab { display: none !important; }
+  body.has-chat .glass-app, body.has-chat:has(.action-bar) .glass-app, body.has-chat:has(.lobby-actions) .glass-app { padding-bottom: calc(1.5rem + var(--safe-bottom)); }
+}
+@media (min-width: 760px) and (min-height: 541px) { .chat-top { display: none !important; } }
+@media (max-width: 340px) {
+  .topbar-actions { gap: 0.3rem; }
+  .top-btn, .lang-select { height: 36px; min-width: 36px; }
+  .lang-select { padding: 0 0.4rem; }
+}
+
+/* Short landscape screens: a sticky bottom bar would cover a quarter of the screen. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .stage > .action-bar, .lobby-actions { position: static; }
+  .stage > .action-bar { background: none; margin: 0.5rem 0 0; padding: 0; }
 }

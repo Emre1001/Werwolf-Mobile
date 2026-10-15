@@ -4,13 +4,13 @@ import {
   initializeFirestore, getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs,
   deleteDoc, getDoc, addDoc, orderBy, limitToLast, runTransaction, arrayUnion, deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=5.0";
+import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=5.1";
 import {
   NARRATOR, MIN_PLAYERS, MAX_PLAYERS, OPTIONAL_ROLES, DAY_TIMES, defaultSettings, QUICK_ROLES,
   defaultActionData, inGame, alivePlayers, byId, hasRoleAlive, roleEnabled, buildRolePool, wolfCountFor,
   buildStartGame, buildRestart, buildAdvance, buildStartVoting, buildHunterShot, buildWinCheck,
   finalizeUpdate, stepDone, voteTally
-} from "./engine.js?v=5.0";
+} from "./engine.js?v=5.1";
 
 // ========== FIREBASE ==========
 const firebaseConfig = {
@@ -111,7 +111,7 @@ function acceptConsent() { storageSet(CONSENT_KEY, "true"); consentGiven = true;
 function rejectConsent() { showToast(t("consentNeeded"), "warning"); }
 
 function showImpressum() { $("legal-modal-title").innerText = t("imprint"); $("legal-modal-body").innerHTML = `<p><strong>Angaben gemäß § 5 TMG:</strong></p><p>Emre Asik<br>E-Mail: emre.asik201060@gmail.com</p><p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage.</p><p><strong>Verantwortlich für den Inhalt:</strong> Emre Asik</p>`; $("legal-modal").style.display = "flex"; }
-function showDatenschutz() { $("legal-modal-title").innerText = t("privacy"); $("legal-modal-body").innerHTML = `<p><strong>1. Verantwortlicher</strong><br>Emre Asik, emre.asik201060@gmail.com</p><p><strong>2. Erhobene Daten</strong><br>Spieler-ID, Geräte-ID, Spielername (LocalStorage). Technisch notwendig.</p><p><strong>3. Rechtsgrundlage</strong><br>Art. 6 Abs. 1 lit. a, b DSGVO. Einwilligung jederzeit widerrufbar.</p><p><strong>4. Weitergabe</strong><br>Keine Weitergabe an Dritte.</p>`; $("legal-modal").style.display = "flex"; }
+function showDatenschutz() { $("legal-modal-title").innerText = t("privacy"); $("legal-modal-body").innerHTML = `<p><strong>1. Verantwortlicher</strong><br>Emre Asik, emre.asik201060@gmail.com</p><p><strong>2. Erhobene Daten</strong><br>Spieler-ID, Geräte-ID, Spielername (LocalStorage). Technisch notwendig.</p><p><strong>3. Rechtsgrundlage</strong><br>Art. 6 Abs. 1 lit. a, b DSGVO. Einwilligung jederzeit widerrufbar.</p><p><strong>4. Verarbeitung</strong><br>Lobbys, Spielzüge und Chat-Nachrichten werden über Google Firebase (Firestore, Google Ireland Ltd.) gespeichert und synchronisiert. Keine Weitergabe zu Werbe- oder Analysezwecken.</p>`; $("legal-modal").style.display = "flex"; }
 
 // ========== NETWORK BANNER ==========
 // Brief network blips are normal on phones — show an unobtrusive banner instead of a blocking modal.
@@ -310,8 +310,10 @@ function showPhaseTransition(phase) {
   overlay.className = `phase-overlay ${meta[2]}`;
   void overlay.offsetWidth;
   overlay.classList.add("active");
-  setTimeout(() => overlay.classList.remove("active"), 1600);
+  clearTimeout(phaseOverlayTimer);
+  phaseOverlayTimer = setTimeout(() => overlay.classList.remove("active"), 1600);
 }
+let phaseOverlayTimer = null;
 function setPhaseTheme(phase) { document.body.dataset.phase = phase || ""; }
 
 // ========== GUIDE ==========
@@ -579,7 +581,7 @@ function detachLobby(toMenu = true) {
   clearInterval(heartbeatTimer); heartbeatTimer = null;
   clearInterval(tickTimer); tickTimer = null;
   currentLobbyId = null; currentLobby = null;
-  chatMessages = []; chatChannel = null; chatOpen = false;
+  chatMessages = []; chatChannel = null; chatOpen = false; renderedMsgIds.clear(); lastUnread = 0;
   updateChatUI();
   releaseWakeLock();
   hideRoleCard();
@@ -709,8 +711,16 @@ function confirmLeave() {
 
 // Seq-guarded transaction: `build(freshData)` returns the update or null. A second caller with the
 // same expected seq (other client, timeout, double tap) is a harmless no-op.
-async function transition(expectSeq, build) {
-  if (!currentLobbyId || transitionBusy) return false;
+// Calls are queued: a tap that lands while the automatic narrator is mid-transition waits for it
+// (the seq guard then decides) instead of being silently dropped.
+let transitionQueue = Promise.resolve();
+function transition(expectSeq, build) {
+  const run = transitionQueue.then(() => runTransition(expectSeq, build));
+  transitionQueue = run.catch(() => false);
+  return run;
+}
+async function runTransition(expectSeq, build) {
+  if (!currentLobbyId) return false;
   transitionBusy = true;
   const ref = lobbyRef();
   try {
@@ -873,6 +883,7 @@ let chatOpen = false;
 let chatReadAt = {};
 let lastChatSend = 0;
 let lastUnread = 0;
+const renderedMsgIds = new Set();
 
 function chatChannelFor(d, me) {
   if (!d || !me || d.mode === "lokal" || me.role === NARRATOR) return null;
@@ -888,7 +899,7 @@ function refreshChatChannel(d, me) {
   if (ch !== chatChannel) {
     chatChannel = ch;
     if (!ch) chatOpen = false;
-    if (ch === "wolf") $("chat-fab")?.classList.add("pulse");
+    if (ch === "wolf") { $("chat-fab")?.classList.add("pulse"); $("chat-top")?.classList.add("pulse"); }
   }
   updateChatUI();
 }
@@ -912,7 +923,9 @@ function updateChatUI() {
   const sheet = $("chat-container");
   if (!fab || !sheet) return;
   const show = !!chatChannel;
+  const top = $("chat-top");
   fab.style.display = show ? "flex" : "none";
+  if (top) { top.style.display = show ? "inline-flex" : "none"; top.dataset.channel = chatChannel || ""; top.classList.toggle("active", show && chatOpen); }
   document.body.classList.toggle("has-chat", show);
   sheet.classList.toggle("open", show && chatOpen);
   if (!show) return;
@@ -924,15 +937,21 @@ function updateChatUI() {
   if (chatOpen) chatReadAt[readKey] = msgs.length;
   const unread = Math.max(0, msgs.length - (chatReadAt[readKey] || 0));
   const badge = $("chat-badge");
-  if (unread > lastUnread) { fab.classList.remove("bump"); void fab.offsetWidth; fab.classList.add("bump"); }
+  if (unread > lastUnread) [fab, top].forEach(b => { if (!b) return; b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump"); });
   lastUnread = unread;
-  badge.textContent = unread > 9 ? "9+" : String(unread);
-  badge.style.display = unread ? "flex" : "none";
+  for (const b of [badge, $("chat-badge-top")]) {
+    if (!b) continue;
+    b.textContent = unread > 9 ? "9+" : String(unread);
+    b.style.display = unread ? "flex" : "none";
+  }
   if (!chatOpen) return;
   const box = $("chat-messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const animate = renderedMsgIds.size > 0;
   box.innerHTML = msgs.length ? msgs.map(m => {
     let cls = "chat-msg";
+    if (animate && !renderedMsgIds.has(m.id)) cls += " new";
+    renderedMsgIds.add(m.id);
     if (isMe(m.senderId)) cls += " chat-msg-own";
     if (m.channel === "wolf") cls += " chat-msg-wolf";
     if (m.channel === "dead") cls += " chat-msg-dead";
@@ -944,6 +963,7 @@ function updateChatUI() {
 function setChatOpen(open) {
   chatOpen = open && !!chatChannel;
   $("chat-fab")?.classList.remove("pulse");
+  $("chat-top")?.classList.remove("pulse");
   if (chatOpen) $("chat-messages").dataset.justOpened = "1";
   updateChatUI();
   if (chatOpen && window.innerWidth >= 760) setTimeout(() => $("chat-input")?.focus(), 150);
@@ -1077,7 +1097,7 @@ function gameFooter(d) {
 function bindGameChrome(d, me) {
   $("roleChip")?.addEventListener("click", () => showRoleCard(me.role, roleExtras(d, me), false));
   $("leaveLobbyBtn")?.addEventListener("click", confirmLeave);
-  $("endGameHost")?.addEventListener("click", () => showConfirmModal(t("endGameConfirm"), () => transition(d.seq || 0, (f) => f.gameStarted ? buildRestart(f) : null)));
+  $("endGameHost")?.addEventListener("click", () => showConfirmModal(t("endGameConfirm"), () => transition(currentLobby?.seq || 0, (f) => f.gameStarted ? buildRestart(f) : null)));
 }
 
 function stepScript(d) {
@@ -1766,6 +1786,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("role-display")?.addEventListener("click", hideRoleCard);
 
   $("chat-fab")?.addEventListener("click", () => setChatOpen(!chatOpen));
+  $("chat-top")?.addEventListener("click", () => setChatOpen(!chatOpen));
   $("chat-close")?.addEventListener("click", () => setChatOpen(false));
   $("chat-send")?.addEventListener("click", sendChatMessage);
   $("chat-input")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); sendChatMessage(); } });
