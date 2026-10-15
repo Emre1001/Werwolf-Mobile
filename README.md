@@ -233,8 +233,12 @@ Werwolf-Mobile/
 ├── tests/              # Regel-Tests + End-to-End-Test (Playwright)
 ├── service-worker.js   # PWA-Caching und Offline-Support
 ├── manifest.json       # Web-App-Manifest für Installation
-├── icon.png            # App-Icon
-├── wolf-icon.png       # Wolf-Logo
+├── assets/             # Icon-Quellen (SVG) + build-icons.mjs
+├── favicon.svg         # Favicon / Manifest-Icon (SVG)
+├── icon-192/512.png    # App-Icons (Browser)
+├── icon-maskable-*.png # App-Icons Android (randlos)
+├── apple-touch-icon.png# App-Icon iOS
+├── wolf-icon.png       # Logo für diese README
 ├── LICENSE             # MIT-Lizenz
 └── README.md           # Diese Datei
 ```
@@ -285,6 +289,15 @@ Werwolf-Mobile/
 - **Seherin** → Ergebnis bleibt nach Re-Render sichtbar
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
+
+## 🐺 v5.1 – Neues Icon, Bugfixes & jedes Gerät
+
+- **Eigenes App-Icon** → Flacher, geometrischer Wolfskopf vor einem leuchtenden Mond in den Blautönen der App (statt des realistischen 3D-Bildes). Als SVG-Quelle in `assets/`, dazu Varianten für Browser, Android (maskable, Sicherheitszone für runde/eckige Masken), iOS (180 px) und Favicon. Neu erzeugen: `node assets/build-icons.mjs`
+- **Jedes Gerät** → Getestet auf 15 Bildschirmen: Galaxy-Fold-Außendisplay (280 px), iPhone SE bis Pro Max, Handys quer, iPad mini/Air/Pro, Laptop bis 1440p-Monitor. Kein Element ragt mehr aus dem Bild (`node tests/devices.mjs`)
+- **Handys:** Chat sitzt in der Kopfleiste (verdeckt keine Buttons mehr), Aktionsleiste hat einen eigenen Hintergrund, Spielerkarten passen ihre Spaltenzahl der Breite an, Namen trennen sauber
+- **Querformat:** Auf kleinen Handys eine Spalte, keine klebende Leiste, die den halben Bildschirm frisst
+- **Große Bildschirme:** UI skaliert mit (Full HD, 1440p) und das Menü steht mittig statt als kleiner Streifen oben
+- **Bugfixes:** Klicks während eines automatischen Phasenwechsels gingen verloren (jetzt in einer Warteschlange) · „Spiel beenden“ wirkte nicht, wenn man den Dialog erst nach einem Phasenwechsel bestätigte · im Chat spielten bei jeder neuen Nachricht alle alten ihre Animation erneut ab · Phasen-Overlay wurde bei schnellen Wechseln zu früh ausgeblendet · Mond/Sternschnuppen schienen durch Buttons · Datenschutzhinweis nennt jetzt Google Firebase
 
 ## ✨ v5.0 – Animationen & Theme-Wechsel
 

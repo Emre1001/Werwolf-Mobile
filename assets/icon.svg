@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="0.55" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#0a1733"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#7dd3fc" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7dd3fc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f9ff"/>
+      <stop offset="1" stop-color="#7dd3fc"/>
+    </linearGradient>
+    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f1f47"/>
+      <stop offset="1" stop-color="#050b1c"/>
+    </linearGradient>
+    <filter id="eyeGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e40af"/>
+      <stop offset="1" stop-color="#172554"/>
+    </linearGradient>
+  </defs>
+  <rect id="tile" width="512" height="512" rx="116" fill="url(#bg)"/>
+  <circle cx="256" cy="230" r="215" fill="url(#glow)"/>
+  <!-- stars -->
+  <g fill="#e0f2fe">
+    <path d="M96 118l5 13 13 5-13 5-5 13-5-13-13-5 13-5z"/>
+    <path d="M418 92l4 10 10 4-10 4-4 10-4-10-10-4 10-4z"/>
+    <circle cx="430" cy="196" r="5"/>
+    <circle cx="74" cy="236" r="4"/>
+    <circle cx="138" cy="70" r="3.5"/>
+  </g>
+  <!-- moon -->
+  <circle cx="256" cy="226" r="146" fill="url(#moon)"/>
+  <circle cx="200" cy="168" r="18" fill="#bae6fd" opacity="0.7"/>
+  <circle cx="318" cy="150" r="11" fill="#bae6fd" opacity="0.7"/>
+  <circle cx="330" cy="206" r="7" fill="#bae6fd" opacity="0.7"/>
+  <g transform="translate(256 262) scale(0.9) translate(-256 -262)">
+  <!-- wolf head (flat, geometric) -->
+  <path fill="url(#head)" d="M256 214 L214 192 L160 112 L148 246 L108 314 L164 326 L144 366 L210 372 L256 448 L302 372 L368 366 L348 326 L404 314 L364 246 L352 112 L298 192 Z"/>
+  <!-- inner ears -->
+  <path fill="#1d4ed8" d="M168 148 L204 198 L174 226 Z"/>
+  <path fill="#1d4ed8" d="M344 148 L308 198 L338 226 Z"/>
+  <!-- face mask -->
+  <path fill="url(#face)" d="M256 236 L212 262 L196 312 L230 350 L256 418 L282 350 L316 312 L300 262 Z"/>
+  <!-- muzzle highlight -->
+  <path fill="#3b82f6" opacity="0.45" d="M256 300 L278 342 L256 414 L234 342 Z"/>
+  <!-- eyes -->
+  <g filter="url(#eyeGlow)" fill="#38bdf8" opacity="0.9"><circle cx="216" cy="284" r="16"/><circle cx="296" cy="284" r="16"/></g>
+  <path fill="#38bdf8" d="M196 272 L238 282 L226 296 L204 292 Z"/>
+  <path fill="#38bdf8" d="M316 272 L274 282 L286 296 L308 292 Z"/>
+  <path fill="#e0f2fe" d="M214 280 L228 283 L222 290 Z"/>
+  <path fill="#e0f2fe" d="M298 280 L284 283 L290 290 Z"/>
+  <!-- nose -->
+  <path fill="#050b1c" d="M240 390 L272 390 L256 410 Z"/>
+  </g>
+</svg>
