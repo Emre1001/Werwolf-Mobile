@@ -22,8 +22,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="format-detection" content="telephone=no">
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="modulepreload" href="engine.js?v=4.1">
-  <link rel="modulepreload" href="i18n.js?v=4.1">
+  <link rel="modulepreload" href="engine.js?v=5.0">
+  <link rel="modulepreload" href="i18n.js?v=5.0">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" href="icon-192.png">
@@ -31,7 +31,7 @@
   <meta property="og:description" content="Das ultimative Werwolf-Spiel für dein Handy – 10 Rollen, Echtzeit-Chat, automatischer Erzähler">
   <meta property="og:type" content="website">
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=4.1">
+  <link rel="stylesheet" href="style.css?v=5.0">
   <style>
     /* Critical guard: never show these before the stylesheet says so. */
     #chat-container:not(.open), .net-banner:not(.show) { visibility: hidden; opacity: 0; pointer-events: none; }
@@ -44,13 +44,28 @@
       <p>Für dieses Spiel muss JavaScript aktiviert sein. Bitte aktiviere JavaScript in deinem Browser und lade die Seite neu.</p>
     </div>
   </noscript>
+  <div class="scene" id="scene" aria-hidden="true">
+    <div class="sky sky-night"></div>
+    <div class="sky sky-day"></div>
+    <div class="stars" id="stars"><i></i><i></i><i></i></div>
+    <div class="shoot s1"></div><div class="shoot s2"></div>
+    <div class="moon-glow"></div>
+    <div class="sun-glow"></div>
+    <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+  </div>
   <canvas id="particles"></canvas>
 
   <header class="topbar" id="topbar">
     <div class="topbar-brand"><img src="icon-192.png" alt=""><span>Werwolf</span></div>
     <div class="topbar-actions">
       <select id="lang-select" class="lang-select" aria-label="Language / Sprache"></select>
-      <button id="theme-toggle" class="top-btn" title="Hell-/Dunkelmodus" aria-label="Theme"><span class="ico" aria-hidden="true">🌙</span></button>
+      <button id="theme-toggle" class="top-btn theme-toggle" title="Hell-/Dunkelmodus" aria-label="Theme">
+        <svg class="theme-svg" viewBox="0 0 24 24" aria-hidden="true">
+          <mask id="theme-moon-mask"><rect width="24" height="24" fill="#fff"/><circle class="moon-cut" cx="12" cy="12" r="8" fill="#000"/></mask>
+          <circle class="sun-core" cx="12" cy="12" r="9" fill="currentColor" mask="url(#theme-moon-mask)"/>
+          <path class="sun-rays" d="M12 1.5v2.5M12 20v2.5M1.5 12h2.5M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+        </svg>
+      </button>
       <button id="guide-btn" class="top-btn" title="Spielanleitung" aria-label="Guide"><span class="ico" aria-hidden="true">📖</span></button>
     </div>
   </header>
@@ -157,6 +172,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=4.1"></script>
+  <script type="module" src="app.js?v=5.0"></script>
 </body>
 </html>
