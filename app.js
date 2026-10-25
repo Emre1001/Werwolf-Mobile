@@ -1,16 +1,19 @@
-// app.js – Werwolf Mobile v3 | UI, sync & presence. Game rules live in engine.js.
+// app.js – Werwolf Mobile v6 | UI, sync & presence. Game rules live in engine.js.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
   initializeFirestore, getFirestore, doc, onSnapshot, updateDoc, collection, query, where, getDocs,
   deleteDoc, getDoc, addDoc, orderBy, limitToLast, runTransaction, arrayUnion, deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { LANGS, initLang, setLang, getLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=5.1";
+import { LANGS, initLang, setLang, getLang, getLangPref, langName, detectLang, onLangChange, t, roleName, roleDesc } from "./i18n.js?v=6.0";
 import {
   NARRATOR, MIN_PLAYERS, MAX_PLAYERS, OPTIONAL_ROLES, DAY_TIMES, defaultSettings, QUICK_ROLES,
   defaultActionData, inGame, alivePlayers, byId, hasRoleAlive, roleEnabled, buildRolePool, wolfCountFor,
   buildStartGame, buildRestart, buildAdvance, buildStartVoting, buildHunterShot, buildWinCheck,
   finalizeUpdate, stepDone, voteTally
-} from "./engine.js?v=5.1";
+} from "./engine.js?v=6.0";
+
+// Keep in sync with service-worker.js, version.json and the ?v= query strings.
+const APP_VERSION = "6.0";
 
 // ========== FIREBASE ==========
 const firebaseConfig = {
@@ -83,7 +86,42 @@ const presence = { hb: {}, seenAt: {} };
 let seqSeen = { seq: null, at: 0 };
 
 const ui = document.getElementById("ui-container");
+const mainEl = document.getElementById("app-main");   // the only scroll container (app shell)
 const $ = (id) => document.getElementById(id);
+
+// ========== BACK (gesture / button / browser back / Esc) ==========
+// lib/back-stack.js: every overlay and the lobby screen is a history entry, so back closes the
+// most recent thing instead of leaving the app. backPush returns the release function to call
+// when the overlay is closed by other means (X, backdrop, action done).
+const Back = window.BackStack;
+function backPush(id, onBack) { return Back ? Back.push(id, onBack) : () => {}; }
+let overlaySeq = 0;
+
+// Only the topmost overlay is interactive: everything below it (the app shell, lower sheets) is inert,
+// so taps, focus and TalkBack can't reach controls hidden behind a backdrop.
+const OVERLAYS = ".modal, .guide-overlay, .role-display, .upd-overlay, .lang-pop, .chat-container";
+const compactChat = window.matchMedia("(max-width: 899px)");
+const finePointer = window.matchMedia("(pointer: fine)");
+function overlayIsOpen(el) {
+  if (el.matches(".chat-container")) return el.classList.contains("open") && compactChat.matches;
+  return el.style.display !== "none" && getComputedStyle(el).display !== "none";
+}
+function syncInert() {
+  const open = [...document.querySelectorAll(OVERLAYS)].filter(overlayIsOpen);
+  const z = (el) => parseInt(getComputedStyle(el).zIndex, 10) || 0;
+  const top = open.reduce((best, el) => (!best || z(el) >= z(best) ? el : best), null);
+  const shell = document.getElementById("app-shell");
+  if (shell) shell.inert = !!top;
+  document.querySelectorAll(OVERLAYS).forEach(el => { el.inert = !!top && el !== top && overlayIsOpen(el); });
+}
+let inertQueued = false;
+const queueInert = () => { if (inertQueued) return; inertQueued = true; requestAnimationFrame(() => { inertQueued = false; syncInert(); }); };
+new MutationObserver(queueInert).observe(document.body, { childList: true });
+["consent-modal", "legal-modal", "ios-install-modal", "role-display", "chat-container"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) new MutationObserver(queueInert).observe(el, { attributes: true, attributeFilter: ["style", "class"] });
+});
+compactChat.addEventListener?.("change", queueInert);
 
 // ========== GENERIC HELPERS ==========
 function escapeHtml(str) {
@@ -110,8 +148,15 @@ function showConsentModal() { $("consent-modal").style.display = "flex"; }
 function acceptConsent() { storageSet(CONSENT_KEY, "true"); consentGiven = true; $("consent-modal").style.display = "none"; initApp(); setupInstallBanner(); }
 function rejectConsent() { showToast(t("consentNeeded"), "warning"); }
 
-function showImpressum() { $("legal-modal-title").innerText = t("imprint"); $("legal-modal-body").innerHTML = `<p><strong>Angaben gemäß § 5 TMG:</strong></p><p>Emre Asik<br>E-Mail: emre.asik201060@gmail.com</p><p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage.</p><p><strong>Verantwortlich für den Inhalt:</strong> Emre Asik</p>`; $("legal-modal").style.display = "flex"; }
-function showDatenschutz() { $("legal-modal-title").innerText = t("privacy"); $("legal-modal-body").innerHTML = `<p><strong>1. Verantwortlicher</strong><br>Emre Asik, emre.asik201060@gmail.com</p><p><strong>2. Erhobene Daten</strong><br>Spieler-ID, Geräte-ID, Spielername (LocalStorage). Technisch notwendig.</p><p><strong>3. Rechtsgrundlage</strong><br>Art. 6 Abs. 1 lit. a, b DSGVO. Einwilligung jederzeit widerrufbar.</p><p><strong>4. Verarbeitung</strong><br>Lobbys, Spielzüge und Chat-Nachrichten werden über Google Firebase (Firestore, Google Ireland Ltd.) gespeichert und synchronisiert. Keine Weitergabe zu Werbe- oder Analysezwecken.</p>`; $("legal-modal").style.display = "flex"; }
+let legalRelease = null;
+function openLegal() {
+  $("legal-modal").style.display = "flex";
+  legalRelease?.();
+  legalRelease = backPush("legal", () => { legalRelease = null; $("legal-modal").style.display = "none"; });
+}
+function closeLegal() { legalRelease?.(); legalRelease = null; $("legal-modal").style.display = "none"; }
+function showImpressum() { $("legal-modal-title").innerText = t("imprint"); $("legal-modal-body").innerHTML = `<p><strong>Angaben gemäß § 5 TMG:</strong></p><p>Emre Asik<br>E-Mail: emre.asik201060@gmail.com</p><p>Die Anschrift wird aus Datenschutzgründen nicht öffentlich angezeigt. Sie erhalten diese auf Anfrage.</p><p><strong>Verantwortlich für den Inhalt:</strong> Emre Asik</p>`; openLegal(); }
+function showDatenschutz() { $("legal-modal-title").innerText = t("privacy"); $("legal-modal-body").innerHTML = `<p><strong>1. Verantwortlicher</strong><br>Emre Asik, emre.asik201060@gmail.com</p><p><strong>2. Erhobene Daten</strong><br>Spieler-ID, Geräte-ID, Spielername (LocalStorage). Technisch notwendig.</p><p><strong>3. Rechtsgrundlage</strong><br>Art. 6 Abs. 1 lit. a, b DSGVO. Einwilligung jederzeit widerrufbar.</p><p><strong>4. Verarbeitung</strong><br>Lobbys, Spielzüge und Chat-Nachrichten werden über Google Firebase (Firestore, Google Ireland Ltd.) gespeichert und synchronisiert. Keine Weitergabe zu Werbe- oder Analysezwecken.</p>`; openLegal(); }
 
 // ========== NETWORK BANNER ==========
 // Brief network blips are normal on phones — show an unobtrusive banner instead of a blocking modal.
@@ -139,13 +184,25 @@ function applyStaticI18n() {
   document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.setAttribute("placeholder", t(el.dataset.i18nPh)); });
   document.querySelectorAll("[data-i18n-aria]").forEach(el => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
 }
-function buildLangPicker() {
-  const sel = $("lang-select");
-  if (!sel) return;
-  sel.innerHTML = LANGS.map(l => `<option value="${l.code}">${l.flag} ${l.code.toUpperCase()}</option>`).join("");
-  sel.value = getLang();
-  sel.addEventListener("change", () => setLang(sel.value));
-}
+// Bridge for lib/language-picker.js and lib/update-dialog.js (they expect a global I18n).
+window.I18n = {
+  t: (key, vars) => t(key, vars),
+  current: getLang,
+  preference: getLangPref,
+  languages: () => LANGS.map(l => ({ code: l.code, name: l.label })),
+  nameOf: langName,
+  resolve: (code) => (code === "system" ? detectLang() : code),
+  onChange: (fn) => onLangChange(fn),
+  number: (n, opts) => new Intl.NumberFormat(getLang(), opts).format(n),
+  // Soft crossfade while the language changes (instant with reduced motion / without View Transitions).
+  setLanguage(code) {
+    const root = document.documentElement;
+    if (typeof document.startViewTransition !== "function" || reduceMotion()) { setLang(code); return; }
+    root.classList.add("lang-switching");
+    try { document.startViewTransition(() => setLang(code)).finished.finally(() => root.classList.remove("lang-switching")); }
+    catch { root.classList.remove("lang-switching"); setLang(code); }
+  }
+};
 
 const THEME_KEY = "ww_theme";
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -165,24 +222,41 @@ function applyTheme(theme) {
   $("theme-toggle")?.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
   readThemeColors();
 }
+// Stored preference: "light" | "dark", nothing = follow the system.
+const themeMq = window.matchMedia("(prefers-color-scheme: light)");
+function themePref() { const v = storageGet(THEME_KEY); return v === "light" || v === "dark" ? v : "system"; }
+function resolveTheme(pref) { return pref === "system" ? (themeMq.matches ? "light" : "dark") : pref; }
 
 let themeBusy = false;
-// Dark ⇄ light: a circle of the new theme grows out of the toggle button (View Transitions API).
-// Browsers without it get a smooth colour cross-fade (registered @property colour tokens).
+// Quick toggle in the top bar: flips light ⇄ dark (an explicit choice).
 function toggleTheme(e) {
+  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+  setThemePref(next, e, $("theme-toggle"));
+}
+// pref: "system" | "light" | "dark". The new theme grows as a circle out of the control that was used
+// (View Transitions API); browsers without it cross-fade the palette (registered @property colour tokens).
+function setThemePref(pref, e, originEl) {
   if (themeBusy) return;
   const root = document.documentElement;
-  const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
-  const commit = () => { storageSet(THEME_KEY, next); applyTheme(next); };
-  const btn = $("theme-toggle");
+  const next = resolveTheme(pref);
+  const store = () => { if (pref === "system") storageDel(THEME_KEY); else storageSet(THEME_KEY, pref); };
+  const commit = () => { store(); applyTheme(next); };
+  document.dispatchEvent(new CustomEvent("themepref", { detail: pref }));
+  if (root.getAttribute("data-theme") === next) { store(); return; }
+  const btn = originEl || $("theme-toggle");
   const rect = btn?.getBoundingClientRect();
   const x = e && e.clientX ? e.clientX : rect ? rect.left + rect.width / 2 : innerWidth - 40;
   const y = e && e.clientY ? e.clientY : rect ? rect.top + rect.height / 2 : 30;
   buzz(12);
   if (reduceMotion()) { commit(); return; }
+  if (!e && !originEl) {                       // not triggered by the user (OS switched): soft crossfade
+    root.classList.add("theme-fade"); commit();
+    setTimeout(() => root.classList.remove("theme-fade"), 900);
+    return;
+  }
 
-  // expanding ring at the button
-  if (btn) {
+  // expanding ring at the top-bar button
+  if (btn && btn.id === "theme-toggle") {
     const ring = document.createElement("span");
     ring.className = "theme-ring";
     btn.appendChild(ring);
@@ -215,9 +289,8 @@ function toggleTheme(e) {
   }
 }
 function initTheme() {
-  const mq = window.matchMedia("(prefers-color-scheme: light)");
-  applyTheme(storageGet(THEME_KEY) || (mq.matches ? "light" : "dark"));
-  mq.addEventListener?.("change", (e) => { if (!storageGet(THEME_KEY)) applyTheme(e.matches ? "light" : "dark"); });
+  applyTheme(resolveTheme(themePref()));
+  themeMq.addEventListener?.("change", () => { if (themePref() === "system") setThemePref("system"); });
   // Sky: three layers of tiny stars (generated once, animated via opacity only → very cheap).
   const layers = document.querySelectorAll("#stars i");
   const count = innerWidth < 760 ? 26 : 48;
@@ -319,7 +392,7 @@ function setPhaseTheme(phase) { document.body.dataset.phase = phase || ""; }
 // ========== GUIDE ==========
 function showGuide() {
   const existing = document.querySelector(".guide-overlay");
-  if (existing) { existing.remove(); return; }
+  if (existing) { existing.close?.(); return; }
   const keys = ["Werwolf", "Dorfbewohner", ...OPTIONAL_ROLES];
   const overlay = document.createElement("div");
   overlay.className = "guide-overlay";
@@ -327,7 +400,8 @@ function showGuide() {
   overlay.setAttribute("aria-modal", "true");
   overlay.innerHTML = `
     <div class="guide-container glass-card">
-      <button class="sheet-close" id="closeGuideX" aria-label="${t("close")}">✕</button>
+      <div class="sheet-bar"><button class="sheet-close" id="closeGuideX" aria-label="${t("close")}">${ICON_X}</button></div>
+      <div class="sheet-scroll">
       <div class="guide-header"><h2>${t("guideTitle")}</h2><p class="muted">${t("guideSub")}</p></div>
       <div class="guide-section"><h3>${t("guideGoal")}</h3><p>${t("guideGoalText")}</p></div>
       <div class="guide-section">
@@ -350,23 +424,32 @@ function showGuide() {
         <ul class="guide-tips">${["tip1", "tip2", "tip3", "tip4", "tip5"].map(k => `<li>${t(k)}</li>`).join("")}</ul>
       </div>
       <button class="glass-button block" id="closeGuide">${t("understood")}</button>
-    </div>`;
+    </div></div>`;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  let release = backPush("guide", () => { release = null; overlay.remove(); });
+  const close = () => { release?.(); release = null; overlay.remove(); };
+  overlay.close = close;
   overlay.querySelector("#closeGuide").addEventListener("click", close);
   overlay.querySelector("#closeGuideX").addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 }
 
 // ========== MODALS ==========
-function showModal(contentHtml, { onClose, closeLabel = t("close"), className = "" } = {}) {
+const ICON_X = `<svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
+const ICON_CHEV = `<svg class="svg-ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`;
+
+// Sheet on phones, centred dialog on larger screens. Back / Esc / backdrop / X all close it the same way.
+function showModal(contentHtml, { onClose, closeLabel = t("close"), className = "", label = "" } = {}) {
   const modalDiv = document.createElement("div");
   modalDiv.className = "modal dyn-modal";
   modalDiv.setAttribute("role", "dialog");
   modalDiv.setAttribute("aria-modal", "true");
-  modalDiv.innerHTML = `<div class="modal-content glass-card ${className}"><button class="sheet-close" data-close aria-label="${t("close")}">✕</button>${contentHtml}${closeLabel ? `<button class="glass-button ghost block" data-close style="margin-top:1rem;">${closeLabel}</button>` : ""}</div>`;
+  if (label) modalDiv.setAttribute("aria-label", label);
+  modalDiv.innerHTML = `<div class="modal-content glass-card ${className}"><div class="sheet-bar"><button class="sheet-close" data-close aria-label="${t("close")}">${ICON_X}</button></div><div class="sheet-scroll">${contentHtml}${closeLabel ? `<button class="glass-button ghost block" data-close style="margin-top:1rem;">${closeLabel}</button>` : ""}</div></div>`;
   document.body.appendChild(modalDiv);
-  const close = () => { modalDiv.remove(); onClose?.(); };
+  const finish = () => { if (!modalDiv.isConnected) return; modalDiv.remove(); onClose?.(); };
+  let release = backPush("modal" + (++overlaySeq), () => { release = null; finish(); });
+  const close = () => { release?.(); release = null; finish(); };
   modalDiv.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", close));
   modalDiv.addEventListener("click", (e) => { if (e.target === modalDiv) close(); });
   modalDiv.close = close;
@@ -378,7 +461,7 @@ function showConfirmModal(message, onConfirm, { yes = t("yes"), danger = true } 
     <h3 class="center">${t("confirmTitle")}</h3>
     <p class="center muted" style="margin-bottom:1.2rem;">${message}</p>
     <button class="glass-button block ${danger ? "btn-danger" : ""}" id="confirmYes">${yes}</button>`, { closeLabel: t("cancel") });
-  m.querySelector("#confirmYes").addEventListener("click", () => { m.remove(); onConfirm(); });
+  m.querySelector("#confirmYes").addEventListener("click", () => { m.close(); onConfirm(); });
 }
 
 function spawnConfetti() {
@@ -401,21 +484,37 @@ function spawnConfetti() {
 // Same screenKey → swap content silently (no animation, scroll kept) so live updates don't flicker.
 function render(html, key = null) {
   const same = key !== null && key === screenKey;
-  const y = window.scrollY;
+  const y = mainEl.scrollTop;
   // Live updates of the same screen must not replay the entrance animations.
   if (same) ui.classList.remove("screen-enter");
   ui.innerHTML = html;
-  if (same) { window.scrollTo(0, y); return; }
+  syncDock(!same);
+  if (same) { mainEl.scrollTop = y; return; }
   screenKey = key;
-  document.querySelectorAll(".dyn-modal.step-bound").forEach(m => m.remove());
+  document.querySelectorAll(".dyn-modal.step-bound").forEach(m => m.close?.());
   ui.classList.remove("screen-enter");
   void ui.offsetWidth;
   ui.classList.add("screen-enter");
   clearTimeout(enterTimer);
   enterTimer = setTimeout(() => ui.classList.remove("screen-enter"), 1500);
-  window.scrollTo(0, 0);
+  mainEl.scrollTop = 0;
 }
 let enterTimer = null;
+
+// The screen's primary actions move from the content into the dock (own shell row above the gesture bar),
+// so they are always reachable and never cover a list. Ids stay the same, bindings work unchanged.
+const dock = $("dock");
+function syncDock(enter) {
+  const items = ui.querySelectorAll(".action-bar, .lobby-actions, .dock-note");
+  dock.replaceChildren(...items);
+  const has = items.length > 0;
+  dock.hidden = !has;
+  $("app-shell")?.classList.toggle("has-dock", has);
+  if (has && enter && !reduceMotion()) {
+    dock.classList.remove("dock-enter"); void dock.offsetWidth; dock.classList.add("dock-enter");
+  }
+}
+if (window.ResizeObserver) new ResizeObserver(() => document.documentElement.style.setProperty("--dock-h", (dock.hidden ? 0 : dock.offsetHeight) + "px")).observe(dock);
 
 // Tap-to-select list of player cards. Selection survives live re-renders of the same screen.
 function bindPicker(gridId, { multi = 0, initial = null, allowNone = false, onChange } = {}) {
@@ -498,6 +597,7 @@ function showRoleCard(role, extras = [], timed = false) {
   const fill = $("role-timer-fill");
   box.querySelector(".role-timer-bar").style.display = timed ? "" : "none";
   box.style.display = "flex";
+  if (!roleRelease) roleRelease = backPush("role", () => { roleRelease = null; hideRoleCard(); });
   clearTimeout(roleDisplayTimer);
   if (timed) {
     fill.style.transition = "none"; fill.style.width = "100%";
@@ -505,7 +605,12 @@ function showRoleCard(role, extras = [], timed = false) {
     roleDisplayTimer = setTimeout(hideRoleCard, 9000);
   }
 }
-function hideRoleCard() { clearTimeout(roleDisplayTimer); const b = $("role-display"); if (b) b.style.display = "none"; }
+let roleRelease = null;
+function hideRoleCard() {
+  clearTimeout(roleDisplayTimer);
+  roleRelease?.(); roleRelease = null;
+  const b = $("role-display"); if (b) b.style.display = "none";
+}
 
 // ========== PRESENCE & HEARTBEAT ==========
 function trackPresence(d) {
@@ -558,7 +663,8 @@ function clearSession() { storageDel(SESSION_KEY); }
 
 const seenLobbyPlayers = new Set();
 function enterLobby(code) {
-  detachLobby(false);
+  detachLobby(false, { keepScreen: true });
+  if (Back && Back.route !== "lobby") Back.navigate("lobby");   // back from the lobby = leave (see onLobbyBack)
   seenLobbyPlayers.clear();
   currentLobbyId = code;
   saveSession(code);
@@ -575,7 +681,7 @@ function enterLobby(code) {
   render(`<div class="loader" style="margin-top:20vh;"></div>`, "loading");
 }
 
-function detachLobby(toMenu = true) {
+function detachLobby(toMenu = true, { keepScreen = false } = {}) {
   unsubscribeLobby?.(); unsubscribeLobby = null;
   unsubscribeChat?.(); unsubscribeChat = null;
   clearInterval(heartbeatTimer); heartbeatTimer = null;
@@ -587,8 +693,19 @@ function detachLobby(toMenu = true) {
   hideRoleCard();
   setPhaseTheme(null);
   setNetProblem(false);
-  document.querySelectorAll(".dyn-modal").forEach(m => m.remove());
+  document.querySelectorAll(".dyn-modal").forEach(m => m.close?.());
+  if (!keepScreen && Back?.route === "lobby") Back.leave();
   if (toMenu) renderMainMenu();
+}
+
+// System back on the lobby/game screen: a running game asks first, a lobby or finished game is left directly.
+function onLobbyBack() {
+  const d = currentLobby;
+  if (!currentLobbyId) return;
+  if (d?.gameStarted && d.phase !== "ENDED") {
+    Back.navigate("lobby");                      // stay on the game screen until the player confirms
+    showConfirmModal(t("leaveConfirm"), leaveLobby, { yes: t("leave") });
+  } else leaveLobby();
 }
 
 // ========== LOBBY MANAGEMENT ==========
@@ -899,7 +1016,7 @@ function refreshChatChannel(d, me) {
   if (ch !== chatChannel) {
     chatChannel = ch;
     if (!ch) chatOpen = false;
-    if (ch === "wolf") { $("chat-fab")?.classList.add("pulse"); $("chat-top")?.classList.add("pulse"); }
+    if (ch === "wolf") $("chat-top")?.classList.add("pulse");
   }
   updateChatUI();
 }
@@ -919,31 +1036,28 @@ function visibleMessages() {
 }
 
 function updateChatUI() {
-  const fab = $("chat-fab");
   const sheet = $("chat-container");
-  if (!fab || !sheet) return;
-  const show = !!chatChannel;
   const top = $("chat-top");
-  fab.style.display = show ? "flex" : "none";
-  if (top) { top.style.display = show ? "inline-flex" : "none"; top.dataset.channel = chatChannel || ""; top.classList.toggle("active", show && chatOpen); }
-  document.body.classList.toggle("has-chat", show);
+  if (!sheet || !top) return;
+  const show = !!chatChannel;
+  if (!show && chatRelease) { chatRelease(); chatRelease = null; }
+  top.hidden = !show;
+  top.dataset.channel = chatChannel || "";
+  top.classList.toggle("active", show && chatOpen);
+  top.setAttribute("aria-expanded", String(show && chatOpen));
   sheet.classList.toggle("open", show && chatOpen);
+  document.documentElement.classList.toggle("chat-open", show && chatOpen);
   if (!show) return;
-  const title = chatChannel === "wolf" ? t("wolfChat") : chatChannel === "dead" ? t("ghostChat") : "💬 " + t("chat");
+  const title = chatChannel === "wolf" ? t("wolfChat") : chatChannel === "dead" ? t("ghostChat") : t("chat");
   $("chat-title").textContent = title;
-  fab.dataset.channel = chatChannel;
   const msgs = visibleMessages();
   const readKey = chatChannel + ":" + chatGame(currentLobby);
   if (chatOpen) chatReadAt[readKey] = msgs.length;
   const unread = Math.max(0, msgs.length - (chatReadAt[readKey] || 0));
-  const badge = $("chat-badge");
-  if (unread > lastUnread) [fab, top].forEach(b => { if (!b) return; b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump"); });
+  if (unread > lastUnread) { top.classList.remove("bump"); void top.offsetWidth; top.classList.add("bump"); }
   lastUnread = unread;
-  for (const b of [badge, $("chat-badge-top")]) {
-    if (!b) continue;
-    b.textContent = unread > 9 ? "9+" : String(unread);
-    b.style.display = unread ? "flex" : "none";
-  }
+  const badge = $("chat-badge-top");
+  if (badge) { badge.textContent = unread > 9 ? "9+" : String(unread); badge.hidden = !unread; }
   if (!chatOpen) return;
   const box = $("chat-messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -960,13 +1074,16 @@ function updateChatUI() {
   if (atBottom || box.dataset.justOpened) { box.scrollTop = box.scrollHeight; delete box.dataset.justOpened; }
 }
 
+let chatRelease = null;
 function setChatOpen(open) {
   chatOpen = open && !!chatChannel;
-  $("chat-fab")?.classList.remove("pulse");
+  if (chatOpen && !chatRelease) chatRelease = backPush("chat", () => { chatRelease = null; setChatOpen(false); });
+  if (!chatOpen && chatRelease) { chatRelease(); chatRelease = null; }
   $("chat-top")?.classList.remove("pulse");
   if (chatOpen) $("chat-messages").dataset.justOpened = "1";
   updateChatUI();
-  if (chatOpen && window.innerWidth >= 760) setTimeout(() => $("chat-input")?.focus(), 150);
+  // Focus the field only with a mouse/trackpad: on touch screens the keyboard would cover half the screen uninvited.
+  if (chatOpen && finePointer.matches) setTimeout(() => $("chat-input")?.focus(), 150);
 }
 
 async function sendChatMessage() {
@@ -1541,7 +1658,7 @@ function renderLobbyView(d, me) {
       <button class="glass-button ghost" id="leaveLobbyBtn">${t("leave")}</button>
       ${isHost ? `<button class="glass-button grow" id="startGameBtn" ${canStart ? "" : "disabled"}>${t("startGame")}</button>` : `<span class="grow small muted center">${t("waitingForHost")}</span>`}
     </div>
-    ${isHost && hint ? `<p class="small muted center" style="margin-top:.4rem;">${hint}</p>` : ""}
+    ${isHost && hint ? `<p class="small muted center dock-note" style="margin-top:.4rem;">${hint}</p>` : ""}
   </div>`, `lobby:${d.id}`);
 
   $("leaveLobbyBtn")?.addEventListener("click", leaveLobby);
@@ -1673,7 +1790,7 @@ function showCreateLobbyModal(type) {
     if (btn.dataset.busy) return;
     btn.dataset.busy = "1"; btn.classList.add("busy");
     m.querySelectorAll("#roleSettingsModal .chip-toggle:not(.locked)").forEach(c => { settings.roles[c.dataset.role] = c.classList.contains("on"); });
-    try { await createLobby(currentUser.name, isPublic, isPublic ? "online" : mode, settings); m.remove(); }
+    try { await createLobby(currentUser.name, isPublic, isPublic ? "online" : mode, settings); m.close(); }
     catch (e) { showToast(e.message, "error"); }
     finally { delete btn.dataset.busy; btn.classList.remove("busy"); }
   });
@@ -1693,7 +1810,7 @@ async function showJoinLobbyModal() {
   const input = m.querySelector("#codeInput");
   input.addEventListener("input", () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   const doJoin = async (code) => {
-    try { await joinLobby(code, currentUser.name); pendingJoinCode = null; m.remove(); }
+    try { await joinLobby(code, currentUser.name); pendingJoinCode = null; m.close(); }
     catch (e) { showToast(e.message, "error"); }
   };
   const btn = m.querySelector("#confirmJoin");
@@ -1706,7 +1823,7 @@ async function showJoinLobbyModal() {
   };
   btn.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-  if (window.innerWidth >= 760 || !pendingJoinCode) setTimeout(() => input.focus(), 120);
+  if (finePointer.matches) setTimeout(() => input.focus(), 120);
 
   const load = async () => {
     const listDiv = m.querySelector("#joinModalLobbyList");
@@ -1755,12 +1872,10 @@ function initRipples() {
 document.addEventListener("DOMContentLoaded", () => {
   initLang();
   applyStaticI18n();
-  buildLangPicker();
   onLangChange(() => {
     applyStaticI18n();
-    const sel = $("lang-select");
-    if (sel) sel.value = getLang();
     updateChatUI();
+    refreshSettings();
     currentRender?.();
   });
   initTheme();
@@ -1774,6 +1889,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (code.length === 6) pendingJoinCode = code;
     if (params.has("join")) history.replaceState(null, "", location.pathname);
   } catch {}
+  // Root = main menu. Back there leaves the app (system behaviour, keeps Android's predictive back).
+  Back?.init({ root: "menu" });
+  Back?.onRoute(({ direction }) => { if (direction === "back" && currentLobbyId) onLobbyBack(); });
 
   $("theme-toggle")?.addEventListener("click", toggleTheme);
   initRipples();
@@ -1781,23 +1899,29 @@ document.addEventListener("DOMContentLoaded", () => {
   $("reject-consent")?.addEventListener("click", rejectConsent);
   $("show-impressum")?.addEventListener("click", (e) => { e.preventDefault(); showImpressum(); });
   $("show-datenschutz")?.addEventListener("click", (e) => { e.preventDefault(); showDatenschutz(); });
-  $("close-legal-modal")?.addEventListener("click", () => { $("legal-modal").style.display = "none"; });
-  $("guide-btn")?.addEventListener("click", showGuide);
+  $("close-legal-modal")?.addEventListener("click", closeLegal);
+  $("settings-btn")?.addEventListener("click", showSettings);
   $("role-display")?.addEventListener("click", hideRoleCard);
 
-  $("chat-fab")?.addEventListener("click", () => setChatOpen(!chatOpen));
   $("chat-top")?.addEventListener("click", () => setChatOpen(!chatOpen));
+  $("chat-backdrop")?.addEventListener("click", () => setChatOpen(false));
   $("chat-close")?.addEventListener("click", () => setChatOpen(false));
   $("chat-send")?.addEventListener("click", sendChatMessage);
   $("chat-input")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); sendChatMessage(); } });
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (chatOpen) setChatOpen(false);
-    document.querySelector(".guide-overlay")?.remove();
-    const m = [...document.querySelectorAll(".dyn-modal")].pop();
-    if (m) m.close?.();
-    hideRoleCard();
+  // Esc is handled by BackStack (closes the top overlay through the same path as the back gesture).
+  // While typing, the dock steps aside so the field stays visible above the keyboard.
+  document.addEventListener("focusin", (e) => {
+    if (!e.target.matches?.("input, textarea")) return;
+    document.documentElement.classList.add("typing");
+    // the dock just left and the keyboard is opening: keep the field in view once the layout settled
+    setTimeout(() => { if (document.activeElement === e.target) e.target.scrollIntoView({ block: "nearest" }); }, 300);
   });
+  // Keyboard opening/closing resizes the content area: the focused field stays visible.
+  const keepFocusedVisible = () => { const a = document.activeElement; if (a?.matches?.("input, textarea") && mainEl.contains(a)) a.scrollIntoView({ block: "nearest" }); };
+  if (window.ResizeObserver) new ResizeObserver(keepFocusedVisible).observe(mainEl);
+  document.fonts?.addEventListener?.("loadingdone", keepFocusedVisible);
+  document.addEventListener("focusout", () => document.documentElement.classList.remove("typing"));
+  initUpdates();
 
   if (!consentGiven) showConsentModal();
   else { initApp(); setupInstallBanner(); }
@@ -1840,6 +1964,11 @@ function showInstallBar() { $("install-bar")?.classList.add("show"); document.do
 function hideInstallBar() { $("install-bar")?.classList.remove("show"); document.documentElement.classList.remove("install-bar-open"); }
 function dismissInstallBar() { storageSet(INSTALL_DISMISS_KEY, String(Date.now())); hideInstallBar(); }
 let installBarReady = false;
+let iosRelease = null;
+function openIosInstall() {
+  $("ios-install-modal").style.display = "flex";
+  iosRelease = backPush("ios-install", () => { iosRelease = null; $("ios-install-modal").style.display = "none"; });
+}
 function setupInstallBanner() {
   if (isStandalone() || installRecentlyDismissed()) return;
   const btn = $("install-bar-btn");
@@ -1849,7 +1978,7 @@ function setupInstallBanner() {
     installBarReady = true;
     closeBtn.addEventListener("click", dismissInstallBar);
     btn.addEventListener("click", async () => {
-      if (isIos() && !deferredPrompt) { $("ios-install-modal").style.display = "flex"; return; }
+      if (isIos() && !deferredPrompt) { openIosInstall(); return; }
       if (deferredPrompt) {
         deferredPrompt.prompt();
         try { await deferredPrompt.userChoice; } catch {}
@@ -1857,7 +1986,7 @@ function setupInstallBanner() {
         hideInstallBar();
       }
     });
-    $("ios-install-close")?.addEventListener("click", () => { $("ios-install-modal").style.display = "none"; dismissInstallBar(); });
+    $("ios-install-close")?.addEventListener("click", () => { iosRelease?.(); iosRelease = null; $("ios-install-modal").style.display = "none"; dismissInstallBar(); });
   }
   if (isIos() || deferredPrompt) showInstallBar();
 }
@@ -1865,3 +1994,130 @@ window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); defe
 window.addEventListener("appinstalled", () => { deferredPrompt = null; dismissInstallBar(); });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+
+// ========== UPDATES (PWA) ==========
+// A new deploy installs a new service worker, which then waits. The popup (lib/update-dialog.js) offers it:
+// "Jetzt aktualisieren" activates it and reloads (a running game resumes via the saved session),
+// "Später" asks again after a day, "Überspringen" stays silent until a newer version exists.
+const updateAdapter = {
+  mode: "web",
+  async check() {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (!reg) return null;
+    await reg.update().catch(() => {});
+    if (!reg.waiting) return null;
+    const v = await fetch("./version.json", { cache: "no-store" }).then(r => r.json()).then(j => j.version).catch(() => "");
+    // The page already runs the new code (network-first loading): let the waiting worker take over quietly.
+    if (v === APP_VERSION) { reg.waiting.postMessage({ type: "SKIP_WAITING" }); return null; }
+    return v ? { version: v, current: APP_VERSION, notes: "" } : null;
+  },
+  async install() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg?.waiting) { location.reload(); return; }
+    await new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      setTimeout(resolve, 4000);
+    });
+    location.reload();
+  }
+};
+function initUpdates() {
+  if (!window.UpdateUI || !("serviceWorker" in navigator)) return;
+  // First check a bit later than the skill default: the start is busy with Firestore and the role reveal.
+  window.UpdateUI.init({ adapter: updateAdapter, currentVersion: APP_VERSION, firstDelayMs: 8000 });
+}
+
+// ========== SETTINGS SHEET ==========
+// Top bar ⚙ → one sheet with appearance (theme, language), help (guide, legal, donate) and updates.
+const THEMES = () => [["system", t("theme.system")], ["light", t("theme.light")], ["dark", t("theme.dark")]];
+const themeIdx = (p) => Math.max(0, THEMES().findIndex(([v]) => v === p));
+function settingsHtml() {
+  const pref = themePref();
+  const themes = THEMES(), idx = themeIdx;
+  return `<h3 id="settings-title">${t("settings.title")}</h3>
+    <section class="set-group" aria-labelledby="sg-look">
+      <h4 class="set-group-title" id="sg-look">${t("settings.appearance")}</h4>
+      <div class="set-card">
+        <div class="set-row">
+          <div class="set-text"><span class="set-label" id="sl-theme">${t("settings.theme")}</span><span class="set-hint">${t("settings.theme.hint")}</span></div>
+          <div class="theme-seg" role="radiogroup" aria-labelledby="sl-theme" style="--seg-i:${idx(pref)}">
+            ${themes.map(([v, l]) => `<button type="button" role="radio" data-theme-pref="${v}" aria-checked="${v === pref}">${l}</button>`).join("")}
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-text"><span class="set-label" id="sl-lang">${t("settings.language")}</span><span class="set-hint">${t("settings.language.hint")}</span></div>
+          <button class="lang-trigger" id="lang-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-labelledby="sl-lang">
+            <span data-lang-current></span>
+            <svg class="lang-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 8l5 5 5-5"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+    <section class="set-group" aria-labelledby="sg-help">
+      <h4 class="set-group-title" id="sg-help">${t("settings.help")}</h4>
+      <div class="set-card">
+        <button type="button" class="set-row" id="setGuide"><span class="set-text"><span class="set-label">${t("settings.guide")}</span><span class="set-hint">${t("settings.guide.hint")}</span></span>${ICON_CHEV}</button>
+        <button type="button" class="set-row" id="setImprint"><span class="set-text"><span class="set-label">${t("imprint")}</span></span>${ICON_CHEV}</button>
+        <button type="button" class="set-row" id="setPrivacy"><span class="set-text"><span class="set-label">${t("privacy")}</span></span>${ICON_CHEV}</button>
+        <a class="set-row" href="https://paypal.me/Emre100120" target="_blank" rel="noopener"><span class="set-text"><span class="set-label">${t("donate")}</span></span>${ICON_CHEV}</a>
+      </div>
+    </section>
+    <section class="set-group" aria-labelledby="sg-upd">
+      <h4 class="set-group-title" id="sg-upd">${t("settings.updates")}</h4>
+      <div class="set-card">
+        <div class="set-row">
+          <div class="set-text"><span class="set-label" data-update-version></span><span class="set-hint" data-update-status role="status"></span></div>
+          <button type="button" class="glass-button ghost small" data-update-check>${t("update.check")}</button>
+        </div>
+        <div class="set-row">
+          <div class="set-text"><span class="set-label" id="sl-auto">${t("update.auto")}</span><span class="set-hint">${t("update.auto.hint")}</span></div>
+          <button class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="sl-auto" data-update-auto></button>
+        </div>
+      </div>
+    </section>`;
+}
+function showSettings() {
+  if (document.querySelector(".settings-sheet")) return;
+  const m = showModal("", { closeLabel: null, className: "settings-sheet", label: t("settings.title"), onClose: () => document.removeEventListener("themepref", syncSettingsTheme) });
+  document.addEventListener("themepref", syncSettingsTheme);
+  fillSettings(m);
+}
+// Re-filled on a language change, so the open sheet switches language together with the rest of the app.
+function fillSettings(m) {
+  const body = m.querySelector(".sheet-scroll");
+  const y = body.scrollTop;
+  body.innerHTML = settingsHtml();
+  body.scrollTop = y;
+  const seg = m.querySelector(".theme-seg");
+  seg.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-theme-pref]");
+    if (b) setThemePref(b.dataset.themePref, e, b);
+  });
+  seg.addEventListener("keydown", (e) => {                 // radiogroup: arrow keys move the choice
+    if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    e.preventDefault();
+    const dir = (e.key === "ArrowRight") !== (document.documentElement.dir === "rtl") ? 1 : -1;
+    const themes = THEMES();
+    const next = themes[(themeIdx(themePref()) + dir + themes.length) % themes.length][0];
+    const btn = seg.querySelector(`[data-theme-pref="${next}"]`);
+    setThemePref(next, null, btn); btn.focus();
+  });
+  if (window.initLanguagePicker) window.initLanguagePicker(m.querySelector("#lang-trigger"));
+  m.querySelector("#setGuide").addEventListener("click", showGuide);
+  m.querySelector("#setImprint").addEventListener("click", showImpressum);
+  m.querySelector("#setPrivacy").addEventListener("click", showDatenschutz);
+  if (window.UpdateUI) window.UpdateUI.bindSettings(m);
+  else m.querySelector(".set-group:last-of-type")?.remove();
+}
+function syncSettingsTheme(e) {
+  const seg = document.querySelector(".settings-sheet .theme-seg");
+  if (!seg) return;
+  const p = e?.detail || themePref();
+  seg.style.setProperty("--seg-i", String(themeIdx(p)));
+  seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-checked", String(b.dataset.themePref === p)));
+}
+function refreshSettings() {
+  const m = document.querySelector(".settings-sheet")?.closest(".modal");
+  if (m) fillSettings(m);
+}

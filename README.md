@@ -230,7 +230,9 @@ Werwolf-Mobile/
 ├── app.js              # UI, Firebase-Sync, Presence & automatischer Erzähler
 ├── engine.js           # Reine Spielregeln (ohne DOM/Firebase) – testbar
 ├── i18n.js             # 8 Sprachen
-├── tests/              # Regel-Tests + End-to-End-Test (Playwright)
+├── lib/                # Zurück-Stapel, Sprachauswahl, Update-Popup
+├── version.json        # aktuelle Version (für das Update-Popup)
+├── tests/              # Regel-, End-to-End-, Geräte-, Zurück- und Einstellungs-Tests (Playwright)
 ├── service-worker.js   # PWA-Caching und Offline-Support
 ├── manifest.json       # Web-App-Manifest für Installation
 ├── assets/             # Icon-Quellen (SVG) + build-icons.mjs
@@ -290,6 +292,17 @@ Werwolf-Mobile/
 - **Rollen-Balance-Anzeige** → Nutzt dieselbe Spielerzählung wie die Start-Logik
 - **CSS** → Überschriften-Fallback ohne `background-clip: text`-Support (kein unsichtbarer Text); `prefers-reduced-motion` deaktiviert Animationen sauber
 
+## 📱 v6.0 – Handy-fest: Kamera-Loch, Zurück-Geste, nichts überlappt
+
+- **Kamera-Loch & Systemleisten** → Kopfleiste, Inhalt und die neue Aktionsleiste unten halten Abstand zu Punch-Hole, Statusleiste, Gestenleiste und (quer) zur seitlichen Kamera. Im Querformat waren die Ränder vertauscht, dadurch lag der Inhalt unter der Kamera
+- **Zurück-Geste / Zurück-Taste** → schließt zuerst Rollenkarte, Chat, Einstellungen, Sprachauswahl, Anleitung oder Dialoge. In der Lobby führt Zurück ins Menü; in einer laufenden Runde fragt die App erst nach. Esc am PC macht dasselbe
+- **Nichts überlappt mehr** → Die App ist ein festes Gerüst (Kopfleiste / Inhalt / Aktionsleiste): „Spiel starten“, „Bestätigen“ & Co. liegen in einer eigenen Leiste über der Gestenleiste und verdecken keine Karten mehr. Fenster scrollen innen, ihr Schließen-Knopf bleibt stehen; der Hintergrund ist bei offenen Fenstern gesperrt (`inert`)
+- **Weniger Buttons oben** → Kopfleiste: Chat (nur im Spiel), Hell/Dunkel, Einstellungen. Auf großen Bildschirmen öffnet der Chat als Seitenspalte, auf dem Handy als Sheet
+- **Einstellungen (⚙)** → Erscheinungsbild **System / Hell / Dunkel** (Kreis-Reveal aus dem gewählten Knopf), **Sprache** als Auswahlfenster mit Suche und „Systemsprache“ statt Flaggen-Dropdown, Spielanleitung, Impressum, Datenschutz, Spenden, **Updates**
+- **Update-Popup** → Nach einem neuen Deploy erscheint „Neue Version verfügbar“ mit *Jetzt aktualisieren*, *Später* (morgen wieder) und *Dieses Update überspringen*. Aktualisieren lädt neu, eine laufende Runde geht danach weiter
+- **Große Schrift & Tastatur** → Bei 200 % Systemschrift brechen Buttons und Namen sauber um, die Spielerliste wird einspaltig; beim Tippen geht die Aktionsleiste aus dem Weg, das Feld bleibt sichtbar. Alle Touch-Ziele ≥ 44 px
+- Geprüft auf 320–1920 px, hoch/quer, hell/dunkel, 200 % Schrift, Deutsch/Englisch/Türkisch, mit simuliertem Kamera-Loch und Gestenleiste
+
 ## 🐺 v5.1 – Neues Icon, Bugfixes & jedes Gerät
 
 - **Eigenes App-Icon** → Flacher, geometrischer Wolfskopf vor einem leuchtenden Mond in den Blautönen der App (statt des realistischen 3D-Bildes). Als SVG-Quelle in `assets/`, dazu Varianten für Browser, Android (maskable, Sicherheitszone für runde/eckige Masken), iOS (180 px) und Favicon. Neu erzeugen: `node assets/build-icons.mjs`
@@ -317,7 +330,7 @@ Werwolf-Mobile/
 - **Tablet & Laptop** → zweispaltiges Spiel- und Lobby-Layout, Menü nebeneinander, bis zu 4 Spieler-Karten pro Reihe
 - **Keine Icon-Schrift mehr** → Symbole sind Emoji/Unicode, keine leeren Buttons, wenn ein CDN blockiert ist; schnellerer Start
 
-> **Wichtig bei künftigen Änderungen:** Die Versionsnummer an drei Stellen erhöhen: `?v=` in `index.html`, die Imports in `app.js` und `APP_VERSION` in `service-worker.js`.
+> **Wichtig bei künftigen Änderungen:** Die Versionsnummer überall gleich erhöhen: `?v=` in `index.html`, die Imports und `APP_VERSION` in `app.js`, `APP_VERSION` in `service-worker.js` und `version.json` (daraus liest das Update-Popup die neue Version).
 
 ## 🚀 Großes Mobile-Overhaul (v3.0)
 
@@ -353,6 +366,9 @@ Werwolf-Mobile/
 ```bash
 node tests/engine.test.mjs                               # Regeln + 4000 zufällige Komplettspiele
 python3 -m http.server 8765 & node tests/e2e.mjs         # 5 Browser spielen eine echte Partie (benötigt: npm i playwright)
+node tests/devices.mjs                                   # 15 Bildschirme, kein Element ragt heraus (Server auf 8765)
+node tests/preview-server.mjs &                          # App mit Test-Datenbank: /?preview=lobby|night|day|win, &update=1
+node tests/back.mjs && node tests/settings.mjs           # Zurück-Geste, Theme, Sprache, Update-Popup (Server auf 8766)
 ```
 
 ## 📲 Installations-Leiste (iOS & Android)

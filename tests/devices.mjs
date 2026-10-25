@@ -3,6 +3,7 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { STATES } from "./fixtures.mjs";
 const BASE = process.env.BASE || "http://localhost:8765/";
 const SHOTS = process.env.SHOTS || "";
 const ONLY = process.env.ONLY ? process.env.ONLY.split(",") : null;
@@ -15,23 +16,6 @@ const DEVICES = [
   ["ipad-mini", 768, 1024, true], ["ipad-land", 1024, 768, true], ["ipad-pro", 1024, 1366, true],
   ["laptop", 1280, 800, false], ["laptop-l", 1440, 900, false], ["desktop", 1920, 1080, false], ["qhd", 2560, 1440, false]
 ].filter(d => !ONLY || ONLY.includes(d[0]));
-
-const ME = "me-0000";
-const names = ["Anna", "Ben", "Cem", "Dana", "Emre", "Finn", "Gül", "Hans", "Ida-Marie Langname"];
-const roles = ["Werwolf", "Seherin", "Hexe", "Dorfbewohner", "Werwolf", "Jäger", "Amor", "Dorfbewohner", "Prinz"];
-const basePlayers = () => names.map((n, i) => ({ id: i === 0 ? ME : "p" + i, name: n, deviceId: "d" + i, isAlive: true, role: null }));
-const hb = () => Object.fromEntries(basePlayers().map(p => [p.id, Date.now()]));
-const settings = { roles: { Seherin: true, Hexe: true, Amor: true, "Jäger": true, "Kleines Mädchen": false, "Beschützer": true, Prinz: true, "Älteste": false }, wolves: "auto", dayTime: 120, revealRoles: true };
-const common = { code: "WLF7X2", hostId: ME, isPublic: false, mode: "online", settings, kicked: [], volunteerNarratorId: null, confirmedNarratorId: "AUTOMATIC", seq: 5, stepDuration: 0, lastUpdate: Date.now(), heartbeats: hb(), votes: {}, readyVotes: {}, round: 2, gameId: "g1", firstNightDone: true };
-const ad = { werewolfVotes: { p4: "p2" }, nightVictim: null, seerTarget: null, seerLog: [], witch: { usedHeal: false, usedPoison: false, healTarget: null, poisonTarget: null }, witchDone: false, girl: null, lovers: [], amorDone: true, guardTarget: null, lastGuardTarget: null, guardDone: false, elderSurvivedIds: [], princeSurvivedIds: [], pendingHunterId: null, pendingHunterQueue: [], hunterReturn: null, hunterUsedIds: [] };
-const withRoles = (dead = []) => basePlayers().map((p, i) => ({ ...p, role: roles[i], isAlive: !dead.includes(i) }));
-const STATES = {
-  lobby: { ...common, gameStarted: false, phase: "LOBBY", players: basePlayers(), actionData: ad, news: [] },
-  night: { ...common, gameStarted: true, phase: "NIGHT", narratorStep: "WEREWOLF", nightActionsOrder: ["WEREWOLF", "SEER", "WITCH"], currentNightIndex: 0, players: withRoles([7]), actionData: ad, news: [{ t: "executed", id: "p7", name: "Hans", role: "Dorfbewohner" }] },
-  day: { ...common, gameStarted: true, phase: "DAY", narratorStep: "DAY", players: withRoles([7, 3]), actionData: ad, readyVotes: { p1: true, p2: true },
-    news: [{ t: "killed", id: "p3", name: "Dana", role: "Dorfbewohner" }, { t: "lover", id: "p6", name: "Finn", role: "Jäger" }] },
-  win: { ...common, gameStarted: true, phase: "ENDED", winner: "VILLAGE", players: withRoles([0, 4, 7]), actionData: { ...ad, lovers: ["p1", "p2"] }, news: [{ t: "executed", id: ME, name: "Anna", role: "Werwolf" }] }
-};
 
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" }).catch(() => chromium.launch());
 const problems = [];
@@ -72,7 +56,7 @@ async function check(page, label) {
     const vw = document.documentElement.clientWidth;
     const out = [];
     if (document.documentElement.scrollWidth > vw + 1) out.push(`page scrollWidth ${document.documentElement.scrollWidth} > ${vw}`);
-    for (const el of document.querySelectorAll("#ui-container *, .topbar *, .modal-content *, .guide-container *, .lobby-actions *")) {
+    for (const el of document.querySelectorAll("#ui-container *, .topbar *, .modal-content *, .guide-container *, .dock *")) {
       const b = el.getBoundingClientRect();
       if (!b.width || getComputedStyle(el).position === "fixed") continue;
       if (b.right > vw + 1 || b.left < -1) out.push(`${el.tagName.toLowerCase()}.${[...el.classList].join(".")} [${Math.round(b.left)}..${Math.round(b.right)}]`);
@@ -98,9 +82,15 @@ for (const dev of DEVICES) {
   await page.waitForTimeout(150);
   await check(page, `${dev[0]}/join`); await shot(page, `${dev[0]}-3-join`);
   await page.click(".modal .sheet-close");
-  await page.click("#guide-btn");
+  await page.click("#settings-btn");
+  await page.waitForSelector(".settings-sheet");
+  await check(page, `${dev[0]}/settings`); await shot(page, `${dev[0]}-4-settings`);
+  await page.click("#setGuide");
   await page.waitForSelector(".guide-container");
   await check(page, `${dev[0]}/guide`); await shot(page, `${dev[0]}-4-guide`);
+  await page.goBack(); await page.waitForTimeout(150);
+  if (await page.locator(".guide-overlay").count()) problems.push(`${dev[0]}: back did not close the guide`);
+  if (!(await page.locator(".settings-sheet").count())) problems.push(`${dev[0]}: back closed more than the guide`);
   await page.context().close();
   // game states
   for (const st of ["lobby", "night", "day", "win"]) {
@@ -110,7 +100,7 @@ for (const dev of DEVICES) {
     await page.waitForTimeout(200);
     await check(page, `${dev[0]}/${st}`); await shot(page, `${dev[0]}-5-${st}`);
     if (st === "day") {
-      await page.locator("#chat-top:visible, #chat-fab:visible").first().click(); await page.waitForTimeout(350);
+      await page.click("#chat-top"); await page.waitForTimeout(350);
       await check(page, `${dev[0]}/chat`); await shot(page, `${dev[0]}-6-chat`);
     }
     await page.context().close();
