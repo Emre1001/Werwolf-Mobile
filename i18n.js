@@ -2,14 +2,14 @@
 // Role identifiers stay German internally (game-logic keys). Only display is translated.
 
 export const LANGS = [
-  { code: "de", label: "Deutsch", flag: "🇩🇪" },
-  { code: "en", label: "English", flag: "🇬🇧" },
-  { code: "tr", label: "Türkçe", flag: "🇹🇷" },
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "it", label: "Italiano", flag: "🇮🇹" },
-  { code: "pt", label: "Português", flag: "🇵🇹" },
-  { code: "nl", label: "Nederlands", flag: "🇳🇱" }
+  { code: "de", label: "Deutsch" },
+  { code: "en", label: "English" },
+  { code: "tr", label: "Türkçe" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
+  { code: "nl", label: "Nederlands" }
 ];
 
 const LANG_CODES = LANGS.map(l => l.code);
@@ -890,6 +890,172 @@ const V3 = {
 };
 Object.keys(V3).forEach(l => Object.assign(T[l], V3[l]));
 
+// v6 strings: settings sheet (theme, language, updates, help). Dotted keys, shared with lib/language-picker.js
+// and lib/update-dialog.js through the window.I18n bridge in app.js.
+const V6 = {
+  de: {
+    "send": "Senden", "common.close": "Schließen", "common.cancel": "Abbrechen", "common.back": "Zurück",
+    "settings.title": "Einstellungen", "settings.open": "Einstellungen öffnen", "settings.appearance": "Darstellung",
+    "settings.theme": "Erscheinungsbild", "settings.theme.hint": "„System“ folgt automatisch deinem Gerät.",
+    "theme.system": "System", "theme.light": "Hell", "theme.dark": "Dunkel", "theme.toggle": "Hell- oder Dunkelmodus",
+    "settings.language": "Sprache", "settings.language.hint": "Wähle die Sprache der App.",
+    "language.title": "Sprache wählen", "language.system": "Systemsprache", "language.search": "Sprache suchen", "language.noResults": "Keine passende Sprache",
+    "settings.help": "Hilfe & Infos", "settings.guide": "Spielanleitung", "settings.guide.hint": "Rollen, Phasen und Tipps",
+    "settings.legal": "Rechtliches",
+    "settings.updates": "Updates",
+    "update.title": "Neue Version verfügbar", "update.body": "Version {version} steht bereit. Du nutzt gerade {current}.",
+    "update.notes": "Das ist neu", "update.install": "Jetzt aktualisieren", "update.later": "Später", "update.skip": "Dieses Update überspringen",
+    "update.downloading": "Update wird geladen …", "update.version": "Version {version}",
+    "update.installing": "Update wird installiert …", "update.installing.hint": "Die App startet gleich neu. Ein laufendes Spiel wird danach fortgesetzt.",
+    "update.handoff.title": "Download abgeschlossen", "update.handoff": "Bestätige die Installation im nächsten Fenster.",
+    "update.error": "Update fehlgeschlagen", "update.errorBody": "Prüfe deine Verbindung und versuche es erneut.", "update.retry": "Erneut versuchen",
+    "update.check": "Nach Updates suchen", "update.checking": "Suche läuft …",
+    "update.upToDate": "Du bist auf dem neuesten Stand (Version {current}).", "update.checkFailed": "Die Suche nach Updates ist fehlgeschlagen.",
+    "update.auto": "Automatisch suchen", "update.auto.hint": "Im Hintergrund nach neuen Versionen schauen."
+  },
+  en: {
+    "send": "Send", "common.close": "Close", "common.cancel": "Cancel", "common.back": "Back",
+    "settings.title": "Settings", "settings.open": "Open settings", "settings.appearance": "Appearance",
+    "settings.theme": "Theme", "settings.theme.hint": "“System” follows your device automatically.",
+    "theme.system": "System", "theme.light": "Light", "theme.dark": "Dark", "theme.toggle": "Light or dark mode",
+    "settings.language": "Language", "settings.language.hint": "Choose the language of the app.",
+    "language.title": "Choose language", "language.system": "System language", "language.search": "Search languages", "language.noResults": "No matching language",
+    "settings.help": "Help & info", "settings.guide": "How to play", "settings.guide.hint": "Roles, phases and tips",
+    "settings.legal": "Legal",
+    "settings.updates": "Updates",
+    "update.title": "New version available", "update.body": "Version {version} is ready. You’re on {current}.",
+    "update.notes": "What’s new", "update.install": "Update now", "update.later": "Later", "update.skip": "Skip this update",
+    "update.downloading": "Loading update…", "update.version": "Version {version}",
+    "update.installing": "Installing update…", "update.installing.hint": "The app restarts in a moment. A running game continues afterwards.",
+    "update.handoff.title": "Download complete", "update.handoff": "Confirm the installation in the next prompt.",
+    "update.error": "Update failed", "update.errorBody": "Check your connection and try again.", "update.retry": "Try again",
+    "update.check": "Check for updates", "update.checking": "Checking…",
+    "update.upToDate": "You’re up to date (version {current}).", "update.checkFailed": "Couldn’t check for updates.",
+    "update.auto": "Check automatically", "update.auto.hint": "Look for new versions in the background."
+  },
+  tr: {
+    "send": "Gönder", "common.close": "Kapat", "common.cancel": "İptal", "common.back": "Geri",
+    "settings.title": "Ayarlar", "settings.open": "Ayarları aç", "settings.appearance": "Görünüm",
+    "settings.theme": "Tema", "settings.theme.hint": "“Sistem” seçeneği cihazını otomatik olarak takip eder.",
+    "theme.system": "Sistem", "theme.light": "Açık", "theme.dark": "Koyu", "theme.toggle": "Açık veya koyu mod",
+    "settings.language": "Dil", "settings.language.hint": "Uygulamanın dilini seç.",
+    "language.title": "Dil seç", "language.system": "Sistem dili", "language.search": "Dil ara", "language.noResults": "Eşleşen dil yok",
+    "settings.help": "Yardım ve bilgi", "settings.guide": "Nasıl oynanır", "settings.guide.hint": "Roller, aşamalar ve ipuçları",
+    "settings.legal": "Yasal bilgiler",
+    "settings.updates": "Güncellemeler",
+    "update.title": "Yeni sürüm mevcut", "update.body": "{version} sürümü hazır. Şu anki sürümün: {current}.",
+    "update.notes": "Yenilikler", "update.install": "Şimdi güncelle", "update.later": "Daha sonra", "update.skip": "Bu güncellemeyi atla",
+    "update.downloading": "Güncelleme yükleniyor…", "update.version": "Sürüm {version}",
+    "update.installing": "Güncelleme kuruluyor…", "update.installing.hint": "Uygulama birazdan yeniden başlayacak. Devam eden oyun sonra kaldığı yerden sürer.",
+    "update.handoff.title": "İndirme tamamlandı", "update.handoff": "Kurulumu bir sonraki ekranda onayla.",
+    "update.error": "Güncelleme başarısız oldu", "update.errorBody": "Bağlantını kontrol edip tekrar dene.", "update.retry": "Tekrar dene",
+    "update.check": "Güncellemeleri denetle", "update.checking": "Denetleniyor…",
+    "update.upToDate": "Uygulama güncel (sürüm {current}).", "update.checkFailed": "Güncellemeler denetlenemedi.",
+    "update.auto": "Otomatik denetle", "update.auto.hint": "Yeni sürümleri arka planda denetle."
+  },
+  es: {
+    "send": "Enviar", "common.close": "Cerrar", "common.cancel": "Cancelar", "common.back": "Atrás",
+    "settings.title": "Ajustes", "settings.open": "Abrir ajustes", "settings.appearance": "Apariencia",
+    "settings.theme": "Tema", "settings.theme.hint": "«Sistema» sigue automáticamente a tu dispositivo.",
+    "theme.system": "Sistema", "theme.light": "Claro", "theme.dark": "Oscuro", "theme.toggle": "Modo claro u oscuro",
+    "settings.language": "Idioma", "settings.language.hint": "Elige el idioma de la app.",
+    "language.title": "Elegir idioma", "language.system": "Idioma del sistema", "language.search": "Buscar idioma", "language.noResults": "Ningún idioma coincide",
+    "settings.help": "Ayuda e información", "settings.guide": "Cómo jugar", "settings.guide.hint": "Roles, fases y consejos",
+    "settings.legal": "Aviso legal",
+    "settings.updates": "Actualizaciones",
+    "update.title": "Nueva versión disponible", "update.body": "La versión {version} está lista. Usas la {current}.",
+    "update.notes": "Novedades", "update.install": "Actualizar ahora", "update.later": "Más tarde", "update.skip": "Omitir esta actualización",
+    "update.downloading": "Cargando actualización…", "update.version": "Versión {version}",
+    "update.installing": "Instalando actualización…", "update.installing.hint": "La app se reiniciará en un momento. La partida en curso continúa después.",
+    "update.handoff.title": "Descarga completada", "update.handoff": "Confirma la instalación en la siguiente ventana.",
+    "update.error": "La actualización falló", "update.errorBody": "Comprueba tu conexión e inténtalo de nuevo.", "update.retry": "Reintentar",
+    "update.check": "Buscar actualizaciones", "update.checking": "Buscando…",
+    "update.upToDate": "Estás al día (versión {current}).", "update.checkFailed": "No se pudieron buscar actualizaciones.",
+    "update.auto": "Buscar automáticamente", "update.auto.hint": "Buscar nuevas versiones en segundo plano."
+  },
+  fr: {
+    "send": "Envoyer", "common.close": "Fermer", "common.cancel": "Annuler", "common.back": "Retour",
+    "settings.title": "Paramètres", "settings.open": "Ouvrir les paramètres", "settings.appearance": "Apparence",
+    "settings.theme": "Thème", "settings.theme.hint": "« Système » suit automatiquement ton appareil.",
+    "theme.system": "Système", "theme.light": "Clair", "theme.dark": "Sombre", "theme.toggle": "Mode clair ou sombre",
+    "settings.language": "Langue", "settings.language.hint": "Choisis la langue de l'app.",
+    "language.title": "Choisir la langue", "language.system": "Langue du système", "language.search": "Rechercher une langue", "language.noResults": "Aucune langue trouvée",
+    "settings.help": "Aide et infos", "settings.guide": "Comment jouer", "settings.guide.hint": "Rôles, phases et astuces",
+    "settings.legal": "Mentions légales",
+    "settings.updates": "Mises à jour",
+    "update.title": "Nouvelle version disponible", "update.body": "La version {version} est prête. Tu utilises la {current}.",
+    "update.notes": "Nouveautés", "update.install": "Mettre à jour", "update.later": "Plus tard", "update.skip": "Ignorer cette mise à jour",
+    "update.downloading": "Chargement de la mise à jour…", "update.version": "Version {version}",
+    "update.installing": "Installation de la mise à jour…", "update.installing.hint": "L'app redémarre dans un instant. La partie en cours reprend ensuite.",
+    "update.handoff.title": "Téléchargement terminé", "update.handoff": "Confirme l'installation dans la fenêtre suivante.",
+    "update.error": "Échec de la mise à jour", "update.errorBody": "Vérifie ta connexion et réessaie.", "update.retry": "Réessayer",
+    "update.check": "Rechercher des mises à jour", "update.checking": "Recherche…",
+    "update.upToDate": "Tu es à jour (version {current}).", "update.checkFailed": "Impossible de rechercher des mises à jour.",
+    "update.auto": "Rechercher automatiquement", "update.auto.hint": "Chercher de nouvelles versions en arrière-plan."
+  },
+  it: {
+    "send": "Invia", "common.close": "Chiudi", "common.cancel": "Annulla", "common.back": "Indietro",
+    "settings.title": "Impostazioni", "settings.open": "Apri impostazioni", "settings.appearance": "Aspetto",
+    "settings.theme": "Tema", "settings.theme.hint": "«Sistema» segue automaticamente il tuo dispositivo.",
+    "theme.system": "Sistema", "theme.light": "Chiaro", "theme.dark": "Scuro", "theme.toggle": "Modalità chiara o scura",
+    "settings.language": "Lingua", "settings.language.hint": "Scegli la lingua dell'app.",
+    "language.title": "Scegli la lingua", "language.system": "Lingua di sistema", "language.search": "Cerca lingua", "language.noResults": "Nessuna lingua trovata",
+    "settings.help": "Aiuto e info", "settings.guide": "Come si gioca", "settings.guide.hint": "Ruoli, fasi e consigli",
+    "settings.legal": "Note legali",
+    "settings.updates": "Aggiornamenti",
+    "update.title": "Nuova versione disponibile", "update.body": "La versione {version} è pronta. Stai usando la {current}.",
+    "update.notes": "Novità", "update.install": "Aggiorna ora", "update.later": "Più tardi", "update.skip": "Salta questo aggiornamento",
+    "update.downloading": "Caricamento aggiornamento…", "update.version": "Versione {version}",
+    "update.installing": "Installazione aggiornamento…", "update.installing.hint": "L'app si riavvia tra un attimo. La partita in corso riprende subito dopo.",
+    "update.handoff.title": "Download completato", "update.handoff": "Conferma l'installazione nella finestra successiva.",
+    "update.error": "Aggiornamento non riuscito", "update.errorBody": "Controlla la connessione e riprova.", "update.retry": "Riprova",
+    "update.check": "Cerca aggiornamenti", "update.checking": "Ricerca in corso…",
+    "update.upToDate": "Sei aggiornato (versione {current}).", "update.checkFailed": "Impossibile cercare aggiornamenti.",
+    "update.auto": "Cerca automaticamente", "update.auto.hint": "Cerca nuove versioni in background."
+  },
+  pt: {
+    "send": "Enviar", "common.close": "Fechar", "common.cancel": "Cancelar", "common.back": "Voltar",
+    "settings.title": "Definições", "settings.open": "Abrir definições", "settings.appearance": "Aspeto",
+    "settings.theme": "Tema", "settings.theme.hint": "«Sistema» segue automaticamente o teu dispositivo.",
+    "theme.system": "Sistema", "theme.light": "Claro", "theme.dark": "Escuro", "theme.toggle": "Modo claro ou escuro",
+    "settings.language": "Idioma", "settings.language.hint": "Escolhe o idioma da app.",
+    "language.title": "Escolher idioma", "language.system": "Idioma do sistema", "language.search": "Procurar idioma", "language.noResults": "Nenhum idioma encontrado",
+    "settings.help": "Ajuda e informações", "settings.guide": "Como jogar", "settings.guide.hint": "Papéis, fases e dicas",
+    "settings.legal": "Informação legal",
+    "settings.updates": "Atualizações",
+    "update.title": "Nova versão disponível", "update.body": "A versão {version} está pronta. Estás a usar a {current}.",
+    "update.notes": "Novidades", "update.install": "Atualizar agora", "update.later": "Mais tarde", "update.skip": "Ignorar esta atualização",
+    "update.downloading": "A carregar atualização…", "update.version": "Versão {version}",
+    "update.installing": "A instalar atualização…", "update.installing.hint": "A app reinicia daqui a pouco. O jogo em curso continua depois.",
+    "update.handoff.title": "Transferência concluída", "update.handoff": "Confirma a instalação na janela seguinte.",
+    "update.error": "A atualização falhou", "update.errorBody": "Verifica a ligação e tenta novamente.", "update.retry": "Tentar novamente",
+    "update.check": "Procurar atualizações", "update.checking": "A procurar…",
+    "update.upToDate": "Está tudo atualizado (versão {current}).", "update.checkFailed": "Não foi possível procurar atualizações.",
+    "update.auto": "Procurar automaticamente", "update.auto.hint": "Procurar novas versões em segundo plano."
+  },
+  nl: {
+    "send": "Versturen", "common.close": "Sluiten", "common.cancel": "Annuleren", "common.back": "Terug",
+    "settings.title": "Instellingen", "settings.open": "Instellingen openen", "settings.appearance": "Weergave",
+    "settings.theme": "Thema", "settings.theme.hint": "‘Systeem’ volgt automatisch je apparaat.",
+    "theme.system": "Systeem", "theme.light": "Licht", "theme.dark": "Donker", "theme.toggle": "Lichte of donkere modus",
+    "settings.language": "Taal", "settings.language.hint": "Kies de taal van de app.",
+    "language.title": "Taal kiezen", "language.system": "Systeemtaal", "language.search": "Taal zoeken", "language.noResults": "Geen taal gevonden",
+    "settings.help": "Hulp & info", "settings.guide": "Hoe te spelen", "settings.guide.hint": "Rollen, fasen en tips",
+    "settings.legal": "Juridisch",
+    "settings.updates": "Updates",
+    "update.title": "Nieuwe versie beschikbaar", "update.body": "Versie {version} staat klaar. Je gebruikt nu {current}.",
+    "update.notes": "Wat is er nieuw", "update.install": "Nu bijwerken", "update.later": "Later", "update.skip": "Deze update overslaan",
+    "update.downloading": "Update laden…", "update.version": "Versie {version}",
+    "update.installing": "Update installeren…", "update.installing.hint": "De app start zo opnieuw. Een lopend spel gaat daarna verder.",
+    "update.handoff.title": "Download voltooid", "update.handoff": "Bevestig de installatie in het volgende venster.",
+    "update.error": "Update mislukt", "update.errorBody": "Controleer je verbinding en probeer het opnieuw.", "update.retry": "Opnieuw proberen",
+    "update.check": "Zoeken naar updates", "update.checking": "Zoeken…",
+    "update.upToDate": "Je bent up-to-date (versie {current}).", "update.checkFailed": "Zoeken naar updates is mislukt.",
+    "update.auto": "Automatisch zoeken", "update.auto.hint": "Op de achtergrond naar nieuwe versies zoeken."
+  }
+};
+Object.keys(V6).forEach(l => Object.assign(T[l], V6[l]));
+
 // Translated role names + descriptions, keyed by the canonical German role key.
 const ROLE = {
   de: { names: { Werwolf: "Werwolf", Dorfbewohner: "Dorfbewohner", Seherin: "Seherin", Hexe: "Hexe", Amor: "Amor", "Jäger": "Jäger", "Kleines Mädchen": "Kleines Mädchen", "Beschützer": "Beschützer", Prinz: "Prinz", "Älteste": "Älteste", ERZÄHLER: "Erzähler" },
@@ -914,24 +1080,34 @@ let currentLang = "de";
 const listeners = [];
 
 export function detectLang() {
-  const nav = (navigator.language || navigator.userLanguage || "de").slice(0, 2).toLowerCase();
-  return LANG_CODES.includes(nav) ? nav : "en";
+  const wanted = navigator.languages?.length ? navigator.languages : [navigator.language || "en"];
+  for (const tag of wanted) {
+    const base = String(tag).slice(0, 2).toLowerCase();
+    if (LANG_CODES.includes(base)) return base;
+  }
+  return "en";
 }
 
 export function getLang() { return currentLang; }
 
+// pref is "system" (follow the device) or a language code; the resolved language is what t() uses.
+let langPref = "system";
+export function getLangPref() { return langPref; }
+export function langName(code) { return (LANGS.find(l => l.code === code) || {}).label || code; }
+
 export function setLang(code) {
-  if (!LANG_CODES.includes(code)) code = "en";
-  currentLang = code;
-  try { localStorage.setItem(LANG_KEY, code); } catch (e) {}
-  document.documentElement.setAttribute("lang", code);
-  listeners.forEach(fn => { try { fn(code); } catch (e) {} });
+  langPref = code === "system" || LANG_CODES.includes(code) ? code : "system";
+  currentLang = langPref === "system" ? detectLang() : langPref;
+  try { if (langPref === "system") localStorage.removeItem(LANG_KEY); else localStorage.setItem(LANG_KEY, langPref); } catch (e) {}
+  document.documentElement.setAttribute("lang", currentLang);
+  listeners.forEach(fn => { try { fn(currentLang); } catch (e) {} });
 }
 
 export function initLang() {
   let saved = null;
   try { saved = localStorage.getItem(LANG_KEY); } catch (e) {}
-  currentLang = (saved && LANG_CODES.includes(saved)) ? saved : detectLang();
+  langPref = (saved && LANG_CODES.includes(saved)) ? saved : "system";
+  currentLang = langPref === "system" ? detectLang() : langPref;
   document.documentElement.setAttribute("lang", currentLang);
   return currentLang;
 }
